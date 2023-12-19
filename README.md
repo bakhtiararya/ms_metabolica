@@ -7,4 +7,6 @@ The contents of this repository represent a curated selection of our files, spec
 
 ## Software Interface
 
+Below is an image of the software for measuring specific metabolites based on input subject files. 
+
 ![alt text](img/interface.png)
