@@ -1,0 +1,83 @@
+#! /bin/csh -f
+
+# $Header: written by Yan Li 
+
+if ( $#argv < 2 ) then
+      echo Usage: 2DJMRSIQuantifyLcModel rootname options slice_number
+      echo '           ' f: get the calibration fator from NAA
+      echo '           ' c: calibration the spectra by the factor using FCALIB
+      echo '           ' n: do nothing
+      exit 1
+endif 
+
+#-----------------------------------
+#    Initial Setup for variables
+#-----------------------------------
+
+set rname = $1
+set file_dir = $PWD
+
+if ($2 != f) then
+   set ISLICE = $3
+   set fpath_dir = $file_dir/Slice_${ISLICE}_Results
+   mkdir $fpath_dir
+else
+   set fpath_dir=$file_dir
+endif
+
+#-----------------------------------
+#  FILRAW,FILTAB,FILPS,FILCSV,FILCOO
+#-----------------------------------
+set LcM_dir = /home/liyan/dot_lcmodel
+
+set FILRAW = ${file_dir}/${rname}.raw   
+set FILTAB = ${fpath_dir}/${rname}_table
+set FILPS = ${fpath_dir}/${rname}.ps    
+set FILCSV = ${fpath_dir}/${rname}.csv  
+set FILCOO = ${fpath_dir}/${rname}_coord
+
+#---------------------------------------------------
+#        Set up control files for each case
+#---------------------------------------------------
+head -14 ${LcM_dir}/yan/mymodel_3davg.control  > $fpath_dir/head.control
+
+switch ($2)
+    case f     
+        echo " NCALIB= 1" >>${fpath_dir}/head.control
+	echo " CHCALI(1)= 'naa'" >> ${fpath_dir}/head.control
+	echo " FCALIB= 1.0" >> ${fpath_dir}/head.control
+	breaksw
+    case c
+        echo " fcalib= 0.0012" >> ${fpath_dir}/head.control
+        breaksw
+endsw 
+     
+if ($2 != f) then
+    echo " ISLICE= $ISLICE" >> ${fpath_dir}/head.control
+    echo " NDSLIC= 8" >> ${fpath_dir}/head.control
+    echo " NDROWS= 12" >> ${fpath_dir}/head.control
+    echo " NDCOLS= 16" >> ${fpath_dir}/head.control
+    echo " IROWST= 3" >> ${fpath_dir}/head.control
+    echo " IROWEN= 10" >> ${fpath_dir}/head.control
+    echo " ICOLST= 5" >> ${fpath_dir}/head.control
+    echo " ICOLEN= 12" >> ${fpath_dir}/head.control
+endif
+
+echo " TITLE= '$rname'" >> ${fpath_dir}/head.control
+echo " FILRAW= '$FILRAW'" >> ${fpath_dir}/head.control
+echo " FILPS= '$FILPS'" >> ${fpath_dir}/head.control
+echo " FILTAB= '$FILTAB'" >> ${fpath_dir}/head.control
+echo " FILCSV= '$FILCSV'" >> ${fpath_dir}/head.control
+echo " FILCOO= '$FILCOO'" >> ${fpath_dir}/head.control
+
+tail -6 ${LcM_dir}/yan/mymodel_3davg.control  > ${fpath_dir}/tail.control
+
+cat ${fpath_dir}/head.control ${fpath_dir}/tail.control > ${fpath_dir}/$rname.control
+
+/bin/rm -r ${fpath_dir}/head.control
+/bin/rm -r ${fpath_dir}/tail.control
+
+#----------------------------------------------
+#              LcModel Analysis
+#----------------------------------------------
+${LcM_dir}/bin_v6/lcmodel < ${fpath_dir}/$rname.control

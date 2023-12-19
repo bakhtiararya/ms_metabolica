@@ -1,0 +1,24 @@
+#!/bin/csh -f
+
+set t1list = (jan18_2007 feb13_2007 feb28_2007 mar7_2007 mar14_2007_2 mar16_2007_1 mar16_2007_2)
+set t2list = (feb16_2006 feb22_2006 feb24_2006 mar5_2006 nov13_2006 jan18_2007 jan24_2007 feb13_2007 mar7_2007 mar16_2007_1 mar16_2007_2 mar21_2007)
+
+set data_dir = /data/lhst4/7T_T1T2/vol
+
+echo "--- T1 Analysis ---"
+foreach vol ($t1list)
+    if (-e $data_dir/$vol) then
+	echo $vol
+    else
+        echo $data_dir/$vol does not exist
+    endif
+end
+
+echo "--- T2 Analysis ---"
+foreach vol ($t2list)
+    if (-e $data_dir/$vol) then
+	echo $vol
+    else
+	echo $data_dir/$vol does not exist
+    endif
+end

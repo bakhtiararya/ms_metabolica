@@ -1,0 +1,235 @@
+#! /bin/csh -f
+# $Header: written by Yan Li 
+
+#-----------------------------------
+#    Initial Setup for variables
+#-----------------------------------
+
+set file_dir = $PWD  
+set rname = $1
+
+switch ($#argv)
+   case 4
+     set echotime = $3
+     set option = $4
+     breaksw
+   case 3
+     set echotime = $3
+     set option = n
+     breaksw
+   case 2
+     set echotime = 30
+     set option = n
+     breaksw
+   default:
+      echo "Usage: 2DJMRSIQuantifyLcModel rootname slice_number [echotime] [option]"
+      echo "     echotime = 30 [default] [97ms & 35ms for 3T]"
+      echo "     option - f: get the calibration fator from NAA"
+      echo "              c: calibration the spectra by the factor using FCALIB"
+      echo "              n: do nothing [default]"
+      exit
+endsw
+
+if (${option} != f) then
+   set ISLICE = $2
+   set fpath_dir = $file_dir/Slice_${ISLICE}_Results
+   if (! -e $fpath_dir}) then
+     mkdir $fpath_dir
+   endif
+else
+   set fpath_dir = $file_dir
+endif
+
+#-----------------------------------
+#  FILRAW,FILTAB,FILPS,FILCSV,FILCOO
+#-----------------------------------
+set LcM_dir = /home/liyan/dot_lcmodel
+
+set FILRAW = ${file_dir}/${rname}.raw   
+set FILTAB = ${fpath_dir}/${rname}_table
+set FILPS = ${fpath_dir}/${rname}.ps    
+set FILCSV = ${fpath_dir}/${rname}.csv  
+set FILCOO = ${fpath_dir}/${rname}_coord
+set tnum = `echo ${rname} | cut -d"_" -f1`
+
+switch (${echotime})
+    case 30
+        set basisset = sim_se30_qb37t_tumor.basis
+        breaksw
+    case 288
+        set basisset = sim_te288_15t.basis
+        breaksw
+    case 144
+	set basisset = sim_te144_qb33t.basis
+        breaksw
+    case 97
+        set basisset = sim_te97_3t.basis
+        breaksw
+    case 68
+        set basisset = mega_te68_qb37t.basis
+        breaksw
+    case 35
+     #   set basisset = press_te35_3t_2014.basis
+        set basisset = sim_te35_qb33t.basis
+    #	set basisset = press_3davgd40_e1_qb3.basis
+    #    set basisset = press_te35_3t_01a.basis
+        breaksw
+    default:
+        set basisset = sim_se${echotime}_qb37t.basis
+endsw
+
+echo " Basis is ${basisset}"
+
+#---------------------------------------------------
+#        Set up control files for each case
+#---------------------------------------------------
+echo " "\$LCMODL"" > $fpath_dir/${rname}.control
+
+#default for 3T
+switch (${echotime})
+   case 30
+	echo " PPMST = 4.1" >> $fpath_dir/${rname}.control
+        echo " PPMEND = 1.8" >> $fpath_dir/${rname}.control
+        breaksw
+   case 20
+	echo " PPMST = 4.1" >> $fpath_dir/${rname}.control
+        echo " PPMEND = 1.8" >> $fpath_dir/${rname}.control
+	breaksw
+   case 68
+        
+        echo " PPMST = 4.2" >> $fpath_dir/${rname}.control
+        echo " PPMEND = 1.9" >> $fpath_dir/${rname}.control
+	breaksw
+   default:
+        echo " PPMST = 4.2" >> $fpath_dir/${rname}.control
+        echo " PPMEND = 0.2" >> $fpath_dir/${rname}.control
+        set tempppm = `grep "ppm reference" ${rname}.ddf | cut -d":" -f2`
+        set centerppm = `echo $tempppm | awk '{print $1}'`
+        echo " PPMCEN = $centerppm" >> $fpath_dir/${rname}.control
+endsw 
+
+#echo " OWNER = 'Magnetic Resonance Science Center, UCSF'" >> $fpath_dir/${rname}.control
+#echo " KEY(1) = 992086760" >> $fpath_dir/${rname}.control
+#echo " KEY(2) = 467637626" >> $fpath_dir/${rname}.control
+echo " LTABLE = 7" >> $fpath_dir/${rname}.control
+echo " LPS = 8" >> $fpath_dir/${rname}.control
+echo " LCSV = 11" >> $fpath_dir/${rname}.control
+echo " LCOORD = 9" >> $fpath_dir/${rname}.control
+
+set a = `grep "center frequency" ${rname}.ddf | cut -d":" -f2`
+set field = `echo $a | awk '{print $1}'`
+echo " HZPPPM = ${field}" >> $fpath_dir/${rname}.control
+
+set b = `grep npoints ${rname}.ddf | cut -d":" -f4`
+set npt = `echo $b | awk '{print $1}'` 
+echo " NUNFIL = ${npt}" >> $fpath_dir/${rname}.control
+
+set c = `grep dwelltime ${rname}.ddf | cut -d":" -f2`
+set dwt = `echo $c | awk '{print $1}'`
+set dwt = `arithmetic $dwt / 1000`
+echo " DELTAT =  ${dwt}" >> $fpath_dir/${rname}.control
+
+echo " FILBAS = '/home/liyan/.lcmodel_solaris/basis-sets/${basisset}'" >> $fpath_dir/${rname}.control
+
+switch ($option)
+    case f     
+        echo " NCALIB= 1" >> $fpath_dir/${rname}.control
+	echo " CHCALI(1)= 'NAA'" >> $fpath_dir/${rname}.control
+	echo " FCALIB= 1.0" >> $fpath_dir/${rname}.control
+	breaksw
+    case c
+        echo " fcalib= 0.8388558" >> $fpath_dir/${rname}.control
+        breaksw
+endsw 
+
+if ($option != f) then
+    
+    echo " ISLICE= $ISLICE" >> $fpath_dir/${rname}.control
+
+    set tag_control = `ls *_sl${ISLICE}_lc.control | cut -d' ' -f1`
+echo ${tag_control}
+     if (${%tag_control} > 0) then
+     if (-e ${tag_control})  then
+          echo "Adding control file from tags"
+           echo "        ${tag_control}"
+           cat ${tag_control} >> $fpath_dir/${rname}.control
+      endif
+     endif
+endif
+
+echo " TITLE= '$rname'" >> $fpath_dir/${rname}.control
+echo " FILRAW= '$FILRAW'" >> $fpath_dir/${rname}.control
+echo " FILPS= '$FILPS'" >> $fpath_dir/${rname}.control
+echo " FILTAB= '$FILTAB'" >> $fpath_dir/${rname}.control
+echo " FILCSV= '$FILCSV'" >> $fpath_dir/${rname}.control
+echo " FILCOO= '$FILCOO'" >>   $fpath_dir/${rname}.control
+echo " NEACH = 30" >> $fpath_dir/${rname}.control
+
+
+switch (${echotime})
+   case 30
+      echo " NUSE1 = 5"  >> $fpath_dir/${rname}.control
+      echo " CHUSE1 = 'NAA','GPC','Cr','mI','Glu'"  >> $fpath_dir/${rname}.control
+      echo " NSIMUL = 13" >> $fpath_dir/${rname}.control
+   #   echo " NOMIT = 9" >> $fpath_dir/${rname}.control
+   #   echo " CHOMIT(1) = 'Lip13a'" >> $fpath_dir/${rname}.control
+   #   echo " CHOMIT(2) = 'Lip13b'" >> $fpath_dir/${rname}.control
+   #   echo " CHOMIT(3) = 'Lip13c'" >> $fpath_dir/${rname}.control
+   #   echo " CHOMIT(4) = 'Lip13d'" >> $fpath_dir/${rname}.control
+   #   echo " CHOMIT(5) = 'Lip09'" >> $fpath_dir/${rname}.control
+   #   echo " CHOMIT(6) = 'MM09'" >> $fpath_dir/${rname}.control
+   #   echo " CHOMIT(7) = 'MM12'" >> $fpath_dir/${rname}.control
+   #   echo " CHOMIT(8) = 'MM14'" >> $fpath_dir/${rname}.control
+   #   echo " CHOMIT(9) = 'MM17'" >> $fpath_dir/${rname}.control
+   #   echo " NKEEP = 2" >> $fpath_dir/${rname}.control
+   #   echo " CHKEEP(1) = 'Lip20'" >> $fpath_dir/${rname}.control
+   #   echo " CHKEEP(2) = 'MM20'" >> $fpath_dir/${rname}.control
+      breaksw
+   case 20
+      echo " NUSE1 = 5"  >> $fpath_dir/${rname}.control
+      echo " CHUSE1 = 'NAA','GPC','Cr','mI','Glu'"  >> $fpath_dir/${rname}.control
+      echo " NSIMUL = 13" >> $fpath_dir/${rname}.control
+    #  echo " NOMIT = 9" >> $fpath_dir/${rname}.control
+    #  echo " CHOMIT(1) = 'Lip13a'" >> $fpath_dir/${rname}.control
+    #  echo " CHOMIT(2) = 'Lip13b'" >> $fpath_dir/${rname}.control
+    #  echo " CHOMIT(3) = 'Lip13c'" >> $fpath_dir/${rname}.control
+    #  echo " CHOMIT(4) = 'Lip13d'" >> $fpath_dir/${rname}.control
+    #  echo " CHOMIT(5) = 'Lip09'" >> $fpath_dir/${rname}.control
+    #  echo " CHOMIT(6) = 'MM09'" >> $fpath_dir/${rname}.control
+    #  echo " CHOMIT(7) = 'MM12'" >> $fpath_dir/${rname}.control
+    #  echo " CHOMIT(8) = 'MM14'" >> $fpath_dir/${rname}.control
+    #  echo " CHOMIT(9) = 'MM17'" >> $fpath_dir/${rname}.control
+    #  echo " NKEEP = 2" >> $fpath_dir/${rname}.control
+    #  echo " CHKEEP(1) = 'Lip20'" >> $fpath_dir/${rname}.control
+    #  echo " CHKEEP(2) = 'MM20'" >> $fpath_dir/${rname}.control
+      breaksw
+   case 144
+	echo " NUSE1 = 3"  >> $fpath_dir/${rname}.control
+        echo " CHUSE1 = 'NAA','Cho','Cre'"  >> $fpath_dir/${rname}.control
+        echo " NSIMUL = 13" >> $fpath_dir/${rname}.control
+        breaksw
+   case 68
+	echo " NUSE1 = 3"  >> $fpath_dir/${rname}.control
+        echo " CHUSE1 = 'NAA','Glu','GABA'"  >> $fpath_dir/${rname}.control
+        echo " NSIMUL = 13" >> $fpath_dir/${rname}.control
+        echo " NCOMBI = 17" >> $fpath_dir/${rname}.control
+        echo " CHCOMB(17) = 'GSH+Glu+Gln'" >> $fpath_dir/${rname}.control
+        echo " NAMREL = 'NAA+NAAG'" >> $fpath_dir/${rname}.control
+        breaksw
+   default:
+	echo " NUSE1 = 5"  >> $fpath_dir/${rname}.control
+        echo " CHUSE1 = 'NAA','Cho','Cr','mI','Glu'"  >> $fpath_dir/${rname}.control
+        echo " NSIMUL = 13" >> $fpath_dir/${rname}.control
+endsw
+
+
+echo " "\$END""  >> $fpath_dir/${rname}.control
+
+#----------------------------------------------
+#              LcModel Analysis
+#----------------------------------------------
+${LcM_dir}/bin/lcmodel < ${fpath_dir}/$rname.control
+
+cd ${fpath_dir}
+
+/home/liyan/script/cshellscript/check_error_lcmodel ${rname}

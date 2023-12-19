@@ -1,0 +1,68 @@
+#!/bin/sh
+#
+#   $URL: https://intrarad.ucsf.edu/svn/rad_software/surbeck/brain/registration/trunk/flirt.x $
+#   $Rev: 17678 $
+#   $Author: alexac@RADIOLOGY.UCSF.EDU $
+#   $Date: 2010-06-23 13:05:27 -0700 (Wed, 23 Jun 2010) $
+#
+FSLOUTPUTTYPE=NIFTI
+FSLDIR=/netopt/fsl/
+BET=$FSLDIR/bin/bet
+FAST=$FSLDIR/bin/fast
+FLIRT=$FSLDIR/bin/flirt
+
+if [ $# -lt 3 ] 
+then
+	echo
+	echo "Usage (from linux machine)"
+	echo "flirt.x <source> <target> <output>"
+	echo "<source> is the image to be aligned to <target>"
+	echo "<output> is the name of the aligned file"
+	echo "Script has to be run from inside the directory containing the source and target images."
+	echo "Example"
+	echo "flirt.x t5588_fl t5588_t1ca t5588_fla"
+	echo "alexandra@berkeley.edu"
+	exit
+fi	 
+
+im1=$1
+im2=$2
+im3=$3
+omat=$4
+
+mkdir aux
+if [ -e aux/"$im1".nii ]; then
+    echo "Source already exists in aux"
+else
+    volume_to_nii $im1
+    mv "$im1".nii aux/
+fi
+if [ -e aux/"$im2".nii ]; then
+    echo "Target already exists in aux"
+else
+    volume_to_nii $im2
+    mv "$im2".nii aux/
+fi
+
+cp $omat aux/.
+
+cd aux
+#$FLIRT -in $im1 -ref $im2 -out "$im3"_aux -omat t1v_swi.omat -cost normmi -dof 9 -forcescaling -searchrx -90 90 -searchry -90 90 -searchrz -90 90
+$FLIRT -in $im1 -ref $im2 -out "$im3"_aux -init $omat -applyxfm -noresample
+
+
+nii_to_volume ../"$im2" "$im3"_aux
+
+if [ -e ../"$im2".int2 ]; then
+    save_as_int2_volume "$im3"_aux $im3
+    mv "$im3".i* ../
+else
+    mv "$im3"_aux.idf ../"$im3".idf
+    mv "$im3"_aux.real ../"$im3".real
+    cd ../
+    fix_rootname.x "$im3"
+    cd aux
+fi
+
+
+cd ..

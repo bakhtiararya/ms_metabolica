@@ -1,0 +1,3 @@
+#!/bin/bash
+
+/netopt/vnc/vncserver -geometry 1440x900

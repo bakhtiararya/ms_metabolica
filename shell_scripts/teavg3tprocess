@@ -1,0 +1,81 @@
+#! /bin/csh -f
+
+# $Header: written by Yan Li 
+
+# Volunteer data
+#foreach k (cb0410_1 cb0410_2 cb0410_3 cb0923_2 cb0923_3 cb0930_1 cb0930_2 cb1013_1 cb1013_2 ms1074)
+
+#   echo $k
+#   set fpath=/data/lsit/brain/yan/2DJ/WM/${k}/2DJ/jMrui
+#   echo $fpath		
+#   cd $fpath
+#   /home/liyan/script/jMrui/TE_avg_3t.x $k
+
+#end
+
+#G2
+foreach k (t3974_Oct21 t4113_Jan27)
+   
+   echo $k
+   set fpath=/data/lsit/brain/yan/2DJ/G2/${k}/2DJ/jMrui
+   echo $fpath
+   cd $fpath
+   /home/liyan/script/jMrui/TE_avg_3t.x tumor
+   
+end
+
+foreach k (t4316_May26 t4321_June2)                                                                
+
+   echo $k
+   set fpath=/data/lsit/brain/yan/2DJ/G2/${k}/2DJ/jMrui
+   echo $fpath
+   cd $fpath
+   /home/liyan/script/jMrui/TE_avg_3t.x tumor1
+   /home/liyan/script/jMrui/TE_avg_3t.x tumor2
+
+end
+
+#G3
+foreach k (t3867_Aug19_2 t3879_Aug26 t3891_Sept2 t4081_Jan6 t4236_Apr17)                                                                
+
+   echo $k
+   set fpath=/data/lsit/brain/yan/2DJ/G3/${k}/2DJ/jMrui
+   echo $fpath
+   cd $fpath
+   /home/liyan/script/jMrui/TE_avg_3t.x tumor
+
+end
+
+foreach k (t4000_Nov4)
+
+   echo $k
+   set fpath=/data/lsit/brain/yan/2DJ/G3/${k}/2DJ/jMrui
+   echo $fpath
+   cd $fpath
+   /home/liyan/script/jMrui/TE_avg_3t.x tumor1
+   /home/liyan/script/jMrui/TE_avg_3t.x tumor2
+   
+end
+
+#G4
+foreach k (t3852_Aug12 t3868_Aug22 t4001_Nov4 t4018_Nov18 t4107_Jan23 t4259_Apr28 t4261_May1 t4310_May22)
+   
+   echo $k
+   set fpath=/data/lsit/brain/yan/2DJ/G4/${k}/2DJ/jMrui
+   echo $fpath
+   cd $fpath
+   /home/liyan/script/jMrui/TE_avg_3t.x tumor
+   
+end
+   
+foreach k (t4144_Feb17 t4334_June12)             
+
+   echo $k
+   set fpath=/data/lsit/brain/yan/2DJ/G4/${k}/2DJ/jMrui
+   echo $fpath
+   cd $fpath
+   /home/liyan/script/jMrui/TE_avg_3t.x tumor1
+   /home/liyan/script/jMrui/TE_avg_3t.x tumor2
+   
+end
+

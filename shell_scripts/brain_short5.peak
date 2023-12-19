@@ -1,0 +1,81 @@
+#
+#   $URL: https://intrarad.ucsf.edu/svn/rad_software/surbeck/brain/MRS/trunk/process_mc/peakfiles/dev/brain/brain_3T_le_lac.peak $
+#   $Rev: 11687 $
+#   $Author: jasonc $
+#   $Date: 2008-10-27 15:25:08 -0700 (Mon, 27 Oct 2008) $
+#
+[peak file]
+anatomy = BRAIN
+comments = brain 3T short echo peak file
+echo = 
+field_strength = 3
+noise_pos_end = 8.503
+noise_pos_start = 8.503
+nsmooth = 0
+nucleus = H1
+num_peaks = 5
+num_regions = 4
+num_sat_regions = 1
+peak1.name = 
+peak1.phase = NONE
+peak1.pos_end = 3.50
+peak1.pos_peak = 3.96
+peak1.pos_start = 4.10
+peak1.ref_peak = NA
+peak2.name = 
+peak2.phase = UP
+peak2.pos_end = 3.16
+peak2.pos_peak = 3.26
+peak2.pos_start = 3.40
+peak2.ref_peak = NA
+peak3.name = 
+peak3.phase = UP
+peak3.pos_end = 2.85
+peak3.pos_peak = 3.06
+peak3.pos_start = 3.16
+peak3.ref_peak = NA
+peak4.name = 
+peak4.phase = UP
+peak4.pos_end = 1.85
+peak4.pos_peak = 2.02
+peak4.pos_start = 2.15
+peak4.ref_peak = NA
+peak1.name = 
+peak5.phase = NONE
+peak5.pos_end = 1.15
+peak5.pos_peak = 1.36
+peak5.pos_start = 1.57
+peak5.ref_peak = NA
+region1.name = 
+region1.phase = NONE
+region1.pos_end = 3.50
+region1.pos_peak = 3.96
+region1.pos_start = 4.13
+region1.ref_peak = NA
+region2.name = 
+region2.phase = UP
+region2.pos_end = 2.85
+region2.pos_peak = 3.26
+region2.pos_start = 3.40
+region2.ref_peak = NA
+region3.name = 
+region3.phase = UP
+region3.pos_end = 1.89
+region3.pos_peak = 2.02
+region3.pos_start = 2.10
+region3.ref_peak = NA
+region4.name = 
+region4.phase = NONE
+region4.pos_end = 1.15
+region4.pos_peak = 1.32
+region4.pos_start = 1.57
+region4.ref_peak = NA
+sat1.name = 
+sat1.phase = NONE
+sat1.pos_end = 4.586
+sat1.pos_peak = 4.763
+sat1.pos_start = 4.949
+sat1.ref_peak = NA
+subject = IN_VIVO
+version = 1.2
+

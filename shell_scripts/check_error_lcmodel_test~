@@ -1,0 +1,92 @@
+#! /bin/csh -f
+
+# $Header: written by Yan Li
+
+if ( $#argv < 1 ) then
+      echo Usage: check_error_lcmodel filename
+      exit 1
+endif 
+
+set fname = $1.control
+
+if (! -e ${fname}) then
+	echo "$fname does not exit"
+	exit 1
+endif
+
+echo "filname is $fname"
+set n = 0
+
+checkup:
+set coords = `ls -t *coord*`
+if (`echo ${%coords}` != 0) then
+	set ecoord = `echo $coords | awk '{print $1}'`
+else
+	echo "No Coord files"
+	exit 1
+endif
+
+set fcoord = `grep -i fatal $ecoord`
+
+if (`echo ${%fcoord}` != 0) then
+	set rowk = `echo $ecoord | cut -d"-" -f1 | rev | cut -d"_" -f1 | rev`
+	set colk = `echo $ecoord | cut -d"-" -f2`
+
+        set linen = `grep -i "irowsk.*=.${rowk}.*" ${fname}`
+	set n = `arithmetic $n + 1`
+	set n = `echo $n | cut -d"." -f1`
+
+# how about many different lines and how about row and column in the different skip voxels -- CORRECT it
+        if (`echo ${%linen}` != 0) then
+        	set voxn = `echo $linen | cut -d"(" -f2 | cut -d")" -f1`
+                set  b = `grep -i "icolsk.*(${voxn}).*=.*${colk}.*" ${fname}`
+		if (`echo ${%b}` != 0) then
+			echo "   The last failed voxel(R$rowk/C$colk) was included in the control files"
+			goto OK
+		else
+			goto analysis
+		endif
+	else
+		goto analysis
+	endif
+else
+	echo "   Ran successfully"
+	goto OK
+endif
+
+analysis:
+echo "   Analysis uncompleted"
+set sknum = `grep -i nvoxsk $fname | cut -d"=" -f2`
+set sknum2 = `arithmetic $sknum + 1`
+set sknum2 = `echo $sknum2 | cut -d"." -f1`
+
+echo "      Missing voxels $sknum -> $sknum2"
+echo "      Adding missing voxel($sknum2) R$rowk C$colk"
+set cutline = `grep -in nvoxsk $fname | cut -d":" -f1`
+set cutlineb1 = `arithmetic $cutline - 1`
+set cutlineb1 = `echo $cutlineb1 | cut -d"." -f1`
+
+head -$cutlineb1 ${fname} > test.control
+echo " NVOXSK = $sknum2" >> test.control
+echo " ICOLSK($sknum2) = $colk" >> test.control
+echo " IROWSK($sknum2) = $rowk" >> test.control
+
+set tline = `wc -l ${fname}`
+set tline = `echo $tline | cut -d" " -f1`
+set cutlinea = `arithmetic $tline - $cutline`
+set cutlinea = `echo $cutlinea | cut -d"." -f1`
+tail -$cutlinea ${fname} >> test.control
+
+mv ${fname} backup_${n}.control
+mv test.control ${fname}
+
+echo "rerun-lcmodel"
+echo " ~/.lcmodel/bin/lcmodel < ${fname}"
+#/home/liyan/.lcmodel/bin/lcmodel < ${fname}
+
+goto checkup
+
+
+OK: 
+echo "   LcModel Quantification Completed"
+exit 1

@@ -1,0 +1,135 @@
+#! /bin/csh -f
+
+# $Header: written by Yan Li 
+
+if ( $#argv < 3 ) then
+      echo Usage: 3TSEMRSILcModel rootname echotime options slice_number
+      echo '           ' f: get the calibration fator from NAA
+      echo '           ' c: calibration the spectra by the factor using FCALIB
+      echo '           ' n: do nothing
+      exit 1
+endif 
+
+#-----------------------------------
+#    Initial Setup for variables
+#-----------------------------------
+
+set rname = $1
+set file_dir = $PWD
+set echotime = $2
+
+if ($3 != f) then
+   set ISLICE = $4
+   set fpath_dir = $file_dir/Slice_${ISLICE}_Results
+   mkdir $fpath_dir
+else
+   set fpath_dir=$file_dir
+endif
+
+#-----------------------------------
+#  FILRAW,FILTAB,FILPS,FILCSV,FILCOO                                                                                    
+#-----------------------------------
+set LcM_dir = /home/liyan/dot_lcmodel
+
+set FILRAW = ${file_dir}/${rname}.raw   
+set FILTAB = ${fpath_dir}/${rname}_table
+set FILPS = ${fpath_dir}/${rname}.ps    
+set FILCSV = ${fpath_dir}/${rname}.csv  
+set FILCOO = ${fpath_dir}/${rname}_coord
+set tnum = `echo ${rname} | cut -d"_" -f1`
+
+#---------------------------------------------------
+#        Set up control files for each case
+#---------------------------------------------------
+#head -13 ${LcM_dir}/yan/mymodel_3d3t_temp.control  > $fpath_dir/head.control
+
+echo " "\$LCMODL"" > $fpath_dir/${rname}.control
+echo " PPMST = 4.1" >> $fpath_dir/${rname}.control
+echo " PPMEND = 1.8" >> $fpath_dir/${rname}.control
+echo " LTABLE = 7" >> $fpath_dir/${rname}.control
+echo " LPS = 8" >> $fpath_dir/${rname}.control
+echo " LCSV = 11" >> $fpath_dir/${rname}.control
+echo " LCOORD = 9" >> $fpath_dir/${rname}.control
+
+set a = `grep "center frequency" ${rname}.ddf | cut -d":" -f2`
+set field = `echo $a | awk '{print $1}'`
+echo " HZPPPM = ${field}" >> $fpath_dir/${rname}.control
+
+set b = `grep npoints ${rname}.ddf | cut -d":" -f4`
+set npt = `echo $b | awk '{print $1}'` 
+echo " NUNFIL = ${npt}" >> $fpath_dir/${rname}.control
+
+set c = `grep dwelltime ${rname}.ddf | cut -d":" -f2`
+set dwt = `echo $c | awk '{print $1}'`
+set dwt = `arithmetic $dwt / 1000`
+echo " DELTAT =  ${dwt}" >> $fpath_dir/${rname}.control
+
+echo "FILBAS = '/home/liyan/.lcmodel_solaris/basis-sets/sim_te${echotime}_qb33t.basis'" >> ${fpath_dir}/${rname}.control
+
+switch ($3)
+    case f     
+        echo " NCALIB= 1" >> ${fpath_dir}/${rname}.control
+	echo " CHCALI(1)= 'naa'" >> ${fpath_dir}/${rname}.control
+	echo " FCALIB= 1.0" >> ${fpath_dir}/${rname}.control
+	breaksw
+    case c
+        echo " fcalib= 0.0012" >> ${fpath_dir}/${rname}.control
+        breaksw
+endsw 
+     
+if ($3 != f) then
+    
+    echo " ISLICE= $ISLICE" >> ${fpath_dir}/${rname}.control      
+      
+    set tag_control = `ls *_sl${ISLICE}_lc.control | cut -d' ' -f1`
+
+     if (-e ${tag_control})  then
+          echo "Adding control file from tags"
+          echo "        ${tag_control}"
+          cat ${tag_control} >> ${fpath_dir}/${rname}.control
+     endif
+
+endif
+
+echo " TITLE= '$rname'" >> ${fpath_dir}/${rname}.control
+echo " FILRAW= '$FILRAW'" >> ${fpath_dir}/${rname}.control
+echo " FILPS= '$FILPS'" >> ${fpath_dir}/${rname}.control
+echo " FILTAB= '$FILTAB'" >> ${fpath_dir}/${rname}.control
+echo " FILCSV= '$FILCSV'" >> ${fpath_dir}/${rname}.control
+echo " FILCOO= '$FILCOO'" >> ${fpath_dir}/${rname}.control
+
+echo " NEACH = 30" >> $fpath_dir/${rname}.control #individual plots
+
+echo " NUSE1 = 5"  >> $fpath_dir/${rname}.control # met for the preliminary analysis
+echo " CHUSE1 = 'NAA','Cho','Cr','mI','Glu'"  >> $fpath_dir/${rname}.control
+
+
+echo " NSIMUL = 13" >> $fpath_dir/${rname}.control
+echo " NOMIT = 9" >> $fpath_dir/${rname}.control
+echo " CHOMIT(1) = 'Lip13a'" >> $fpath_dir/${rname}.control
+echo " CHOMIT(2) = 'Lip13b'" >> $fpath_dir/${rname}.control
+echo " CHOMIT(3) = 'Lip13c'" >> $fpath_dir/${rname}.control
+echo " CHOMIT(4) = 'Lip13d'" >> $fpath_dir/${rname}.control
+echo " CHOMIT(5) = 'Lip09'" >> $fpath_dir/${rname}.control
+echo " CHOMIT(6) = 'MM09'" >> $fpath_dir/${rname}.control
+echo " CHOMIT(7) = 'MM12'" >> $fpath_dir/${rname}.control
+echo " CHOMIT(8) = 'MM14'" >> $fpath_dir/${rname}.control
+echo " CHOMIT(9) = 'MM17'" >> $fpath_dir/${rname}.control
+
+echo " NKEEP = 2" >> $fpath_dir/${rname}.control
+echo " CHKEEP(1) = 'Lip20'" >> $fpath_dir/${rname}.control
+echo " CHKEEP(2) = 'MM20'" >> $fpath_dir/${rname}.control
+
+echo " "\$END""  >> $fpath_dir/${rname}.control
+
+#----------------------------------------------
+#              LcModel Analysis
+#----------------------------------------------
+#${LcM_dir}/bin/lcmodel < ${fpath_dir}/$rname.control
+
+#----------------------------------------------
+#	Skip these voxels if failed
+#---------------------------------------------- 
+cd ${fpath_dir}
+check_error_lcmodel $rname
+

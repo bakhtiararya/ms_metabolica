@@ -1,0 +1,64 @@
+{\rtf1\ansi\ansicpg1252\cocoartf949\cocoasubrtf350
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+\margl1440\margr1440\vieww9000\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\ql\qnatural\pardirnatural
+
+\f0\fs24 \cf0           if (($perf_status =~ perf_aligned) || ($perf_status =~ perf) || ($perf_status =~ perf_align_rigid)) then\
+              set temp_status = -3\
+              foreach temp_name (recov ph nonlin_rf)\
+ 		  if ($temp_name =~ nonlin_rf) then\
+    			set tempsub = nonlin_fit\
+                  else\
+                        set tempsub = non_parametric\
+                  endif\
+                  set file_name = $\{tnum\}_$\{temp_name\}_t1ca.real\
+                  if ((-e $\{roi_dir\}/$\{file_name\}) || (-e $\{roi_dir\}/$\{file_name\}.gz)) then\
+		        if (-e $\{data_dir\}/$\{perf_status\}/$\{tempsub\}/$\{file_name\}) then\
+			    cmp -s $\{data_dir\}/$\{perf_status\}/$\{tempsub\}/$\{file_name\} $\{roi_dir\}/$\{file_name\}\
+                            if  ($status == 0) then\
+				set temp_status = 0\
+                            endif\
+                        else if (-e $\{data_dir\}/$\{perf_status\}/$\{tempsub\}/$\{tnum\}_$\{temp_name\}.real) then\
+		            /home/liyan/script/cshellscript/resample_perf_image.x $\{tnum\} $\{temp_name\} t1ca\
+                            if (-e $\{data_dir\}/$\{perf_status\}/$\{tempsub\}/$\{file_name\}) then\
+				cmp -s $\{data_dir\}/$\{perf_status\}/$\{tempsub\}/$\{file_name\} $\{roi_dir\}/$\{file_name\}\
+                                if ($status == 0) then\
+				     set temp_status = 0\
+                                endif\
+                            else\
+                                set temp_status = 1\
+                            endif\
+                        else if (($temp_name =~ ph) && (! -e $\{data_dir\}/$\{perf_status\}/$\{tempsub\}/$\{tnum\}_ph.real)) then  \
+			     if (-e $\{data_dir\}/$\{perf_status\}/$\{tempsub\}/$\{tnum\}_rpeak_t1ca.real) then\
+				cmp -s $\{data_dir\}/$\{perf_status\}/$\{tempsub\}/$\{tnum\}_rpeak_t1ca.real $\{roi_dir\}/$\{file_name\}\
+                                if ($status == 0) then\
+					set temp_status = 2\
+					cp $\{data_dir\}/$\{perf_status\}/$\{tempsub\}/$\{tnum\}_rpeak_t1ca.* $\{roi_dir\}\
+                                endif\
+                             endif\
+ 	 		else\
+			     set temp_status = 3\
+			endif\
+                  else\
+			set temp_dir = $\{data_dir\}/$\{perf_status\}/$\{tempsub\}/$\{tnum\}_$\{temp_name\} \
+                        if ((-e $\{temp_dir\}.real) || (-e $\{temp_dir\}.real.gz)) then\
+			       cd $\{data_dir\}/$\{perf_status\}/$\{tempsub\}\
+                               /home/liyan/script/cshellscript/resample_perf_image.x $\{tnum\} $\{temp_name\} t1ca\
+        			if (-e $\{temp_dir\}_t1ca.real) then\
+                                    cp $\{temp_dir\}_t1ca.* $\{roi_dir\}\
+                                    set temp_status = 0\
+                                else\
+                                    set temp_status = -1\
+				endif\
+			else\
+                              set temp_status = -2\
+                        endif\
+                  endif\
+                  if ($temp_status != 0) then\
+                       echo $snum $tnum $perf_status $temp_name $temp_status >> /home/liyan/PerfFail.txt\
+                  endif\
+              end\
+          endif\
+\
+}

@@ -1,0 +1,130 @@
+#!/bin/csh -f
+
+# $Header: written by Yan Li 
+if (-e /home/liyan/7TBtumorMRSI_Acq_Info.txt) then
+   /bin/rm /home/liyan/7TBtumorMRSI_Acq_Info.txt
+endif
+if (-e /home/liyan/7TBtumorMRSI_Acq_Info.csv) then
+   /bin/rm /home/liyan/7TBtumorMRSI_Acq_Info.csv
+endif
+#ISMRM population
+#set bnum = (b3183 b2083 b0078 b3255 b3303 b2579 b3206 b3203 b2716 b1878 b3225 b2969 b1355 b3244 b1720 b2495)
+#set tnum = (t7639 t7659 t7679 t7704 t7707 t7721 t7753 t7757 t7777 t7806 t7846 t7854 t7939 t7962 t7984 t7991 t8000 t8002 t8019 t8033)
+
+#7T population
+set bnum = (b968 b2661 b2977 b1957 b3324 b3313 b3311 b2579 b1355 b1720 b3303 b3255 b0078 b2083 b2579 b2716 b1878 b2969 b1355 b3203 b3225 b3244 b2495 b3183)
+set tnum = (t8256 t8205 t8160 t8104 t8097 t8072 t8059 t8163 t8078 t7846 t7991 t8000 t8002 t8019 t7806 t7704 t7707 t7854 t7757 t7679 t7721 t7777 t7939 t8033)
+set datapath = /data/lhst4/7T_btumor_patients
+
+#corresponding 3T data
+#set bnum = (b0968 b2661 b2977 b1957 b3324 b3313 b3311 b2579 b1355 b1720 b3303 b3255 b0078 b2083 b2579 b2716 b1878 b2969 b1355 b3203 b3225 b3244 b2495 b3183)
+#set tnum = (t8260 t8209 t8161 t8105 t8100 t8071 t8058 t8165 t8080 t7845 t7990 t7999 t8001 t8017 t7807 t7705 t7708 t7851 t7762 t7683 t7722 t7778 t7940 t8030)
+#set datapath = /data/spore3/brain_clinical
+
+set copypath = /data/brain_work/yan/pt_7t/3DMRSI
+
+echo "No,bnum,tnum,date,VSS,SAT,OP,IR,Freq,Time,RawFile,DatFile" >> /home/liyan/7TBtumorMRSI_Acq_Info.csv
+
+set n = 0
+foreach i ($bnum)
+   foreach j ($tnum)
+       if (-e ${datapath}/$i/$j) then
+        #   echo $i/$j
+           set n =  `arithmetic $n + 1`
+           set n = `echo $n | cut -d"." -f1`
+     
+            if (-e ${datapath}/${i}/${j}/spectra/${j}_comb_cor_sum_inv2_sub.ddf) then
+               set workdir = ${datapath}/$i/$j/spectra
+            else
+               set workdir = ${datapath}/$i/$j/spectra_first
+            endif
+
+
+                 
+           cd $workdir
+
+#	  if (! -e ${copypath}/$i) then
+#		mkdir ${copypath}/$i
+#	 endif
+#          if (! -e ${copypath}/$i/$j) then
+#		mkdir ${copypath}/$i/$j
+#          endif
+
+#          set rawname = ${j}_comb_cor_sum_inv2
+#          cp /data/lhst4/7T_btumor_patients/$i/$j/images/${j}_fse*.i* ${copypath}/$i/$j
+          
+#cd ${copypath}/$i/$j
+#          cp ${workdir}/${j}_comb_cor_sum_vss.* ${copypath}/$i/$j
+#           cp ${workdir}/${j}_comb_cor_sum.* ${copypath}/${i}/${j}
+ #         percent_image.x ${j}_t2all.byt ${j}_comb_cor_sum_vss.idf ${j}_t2all_percent
+#          cp ${workdir}/${j}_comb_cor_sum*tag* ${copypath}/$i/$j
+#          cp ${workdir}/${rawname}_* ${copypath}/$i/$j
+#          cp -r ${workdir}/RealFiles ${copypath}/$i/$j
+
+#          if (! -e ${copypath}/$i/3t/) then
+#              mkdir ${copypath}/$i/3t
+#          endif	   
+
+#          cp ${workdir}/${j}_fbcomb_sum_cp_cor.* ${copypath}/$i/3t
+#          cp ${datapath}/$i/$j/images/${j}_fse.* ${copypath}/$i/3t
+      
+#            if (-e ${workdir}/RealFiles) then
+#                cp -r ${workdir}/${j}_comb_cor_met ${copypath}/$i/$j
+#                echo $i/$j copied
+#            else
+#                echo $i/$j wrong directory
+#            endif
+
+
+           set a = `ls -ltr $j`
+            set b = `echo $a | cut -d"/" -f2`
+            set c = `ls ../*.dat`
+            if (-e ../${b}) then
+		set edate = `rdump -p ../${b} | grep -i "Exam date" | cut -d":" -f2`
+                set edate = `echo $edate | cut -d" " -f1`
+            else
+                set edate = NaN
+            endif
+            if (-e ../${b}.dat) then   
+                set opfactor = `grep -i "overpress1" ../${b}.dat`
+                set opfactor = `echo $opfactor | cut -d"=" -f2 | cut -d"0" -f1`
+                set inrec = `grep -i inrecmode ../${b}.dat`
+                set inrec = `echo $inrec | cut -d"=" -f2`
+	        set irfreq = `grep time_inrec ../${b}.dat`
+                set irfreq = `echo $irfreq | cut -d"=" -f2`
+                set irtime = `grep -i offset_rfinrec ../${b}.dat`
+                set irtime = `echo $irtime | cut -d"=" -f2 | cut -d"." -f1`
+                set vss = `grep -i vssatflag ../${b}.dat`
+                set vss = `echo $vss | cut -d"=" -f2`
+                set sats = `grep -i read_sats ../${b}.dat`
+                set sats = `echo $sats | cut -d"=" -f2`
+               echo "$n,$i,$j,$edate,$vss,$sats,$opfactor,$inrec,$irfreq,$irtime,$b,$b.dat" >> /home/liyan/7TBtumorMRSI_Acq_Info.csv
+            else
+               set opfactor = `grep -i "overpress1" ../*.dat`
+               set opfactor = `echo $opfactor | cut -d"=" -f2 | cut -d"0" -f1`
+               set inrec = `grep -i inrecmode ../*.dat`
+               set inrec = `echo $inrec | cut -d"=" -f2`
+	       set irfreq = `grep time_inrec ../*.dat`
+               set irfreq = `echo $irfreq | cut -d"=" -f2`
+               set irtime = `grep -i offset_rfinrec ../*.dat`
+               set irtime = `echo $irtime | cut -d"=" -f2 | cut -d"." -f1`
+               set vss = `grep -i vssatflag ../*.dat`
+               set vss = `echo $vss | cut -d"=" -f2`
+               set sats = `grep -i read_sats ../*.dat`
+               set sats = `echo $sats | cut -d"=" -f2`
+
+
+               echo "$n,$i,$j,$edate,$vss,$sats,$opfactor,$inrec,$irfreq,$irtime,$b,$c" >> /home/liyan/7TBtumorMRSI_Acq_Info.csv
+
+echo "    $b $c" >> /home/liyan/7TBtumorMRSI_Acq_Info.txt
+            endif
+
+           
+
+       endif
+ 
+   end
+end
+
+
+

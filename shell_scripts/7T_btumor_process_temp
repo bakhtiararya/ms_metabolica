@@ -1,0 +1,81 @@
+#!/bin/csh -f
+
+# $Header: written by Yan Li 
+
+
+if (-e /home/liyan/error_7t2.txt) then
+   /bin/rm /home/liyan/error_7t2.txt
+endif
+
+set bnum = (b968 b2661 b2977 b1957 b3324 b3313 b3311 b2579 b1355 b1720 b3303 b3255 b0078 b2083 b2579 b2716 b1878 b2969 b1355 b3203 b3225 b3244 b2495 b3183)
+set tnum = (t8256 t8205 t8160 t8104 t8097 t8072 t8059 t8163 t8078 t7846 t7991 t8000 t8002 t8019 t7806 t7704 t7707 t7854 t7757 t7679 t7721 t7777 t7938 t8033)
+
+#b3225/t7721,b3244/t7777,b2495/t7939, b3183/t8033
+
+#check npt first whether reprocessed
+
+# get number of sat bands
+
+set n = 0
+foreach i ($bnum)
+   foreach j ($tnum)
+       if (-e /data/lhst4/7T_btumor_patients/$i/$j) then
+
+           set workdir = /data/lhst4/7T_btumor_patients/$i/$j/spectra
+           set n =  `arithmetic $n + 1`
+           set n = `echo $n | cut -d"." -f1`
+                      
+           cd $workdir
+	   set rawname = ${j}_comb_cor_sum_inv2
+           
+           foreach sl (3 4 5 6)
+
+                 set fcontrol = ${j}_comb_cor_sum_vss_sl${sl}_lc.control
+
+                 if (-e $fcontrol) then
+                 7TMRSIQuantifyLcModel $rawname $sl
+
+                 set fcontrol = Slice_${sl}_Results/${j}_comb_cor_sum_inv2.control
+
+      	         set rowst = `grep -i IROWST $fcontrol | cut -d"=" -f2`
+                 set rowend = `grep -i IROWEN $fcontrol | cut -d"=" -f2`
+                 set colst = `grep -i ICOLST $fcontrol | cut -d"=" -f2`
+                 set colend = `grep -i ICOLEN $fcontrol | cut -d"=" -f2`
+                 set voxsk = `grep -i NVOXSK $fcontrol | cut -d"=" -f2`
+                 set nrow = `arithmetic $rowend - $rowst`
+                 set nrow = `arithmetic $nrow + 1` 
+                 set ncol = `arithmetic $colend - $colst`
+                 set ncol = `arithmetic $ncol + 1`
+
+                 set calnvox = `arithmetic $nrow x $ncol`
+                 set calnvox = `arithmetic $calnvox - $voxsk`
+                 set calnvox = `echo $calnvox | cut -d"." -f1`
+ 
+                    set nps = `ls Slice_${sl}_Results/*.ps`
+
+                    if (`echo ${#nps}` > 0) then
+	                set nvox = `ls Slice_${sl}_Results/*.ps | wc -l`
+                        if ($calnvox != $nvox) then
+		           set nmiss = `arithmetic $calnvox - $nvox`
+		           set nmiss = `echo $nmiss | cut -d"." -f1`	
+                           echo "     Missing $nmiss ($nvox/$calnvox) voxel(s) in $i/$j/Slice$sl" >> /home/liyan/error_7t2.txt
+                        else 
+                           echo "     $nvox/$calnvox voxels in $i/$j/Slice$sl" >> /home/liyan/error_7t2.txt
+                        endif
+                    else
+
+                      echo "      Missing  ${calnvox} voxels in $i/$j/Slice$sl" >> /home/liyan/error_7t2.txt
+                    endif
+
+               else
+                   echo "       Missing control files from matlab in $i/$j/Slice$sl" >> /home/liyan/error_7t2.txt
+                endif
+              end
+
+      endif
+   end
+end
+
+
+
+

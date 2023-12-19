@@ -1,0 +1,43 @@
+#!/usr/bin/env grid_pipeline
+
+QUEUE brain.q
+ARCH lx24-x86 
+ARGS root root_acimage
+
+# Processing the eight channel regular flyback data 
+
+cp /data/lhst1/yan/7T/basis7t/script/* .
+
+signa_csi $1
+
+set_teavg7t.x $1_1 $1
+
+{
+process_spec_v6.dev -p $1.par $1_1.cmplx
+process_spec_v6.dev -p $1.par $1_2.cmplx
+process_spec_v6.dev -p $1.par $1_3.cmplx
+process_spec_v6.dev -p $1.par $1_4.cmplx
+process_spec_v6.dev -p $1.par $1_5.cmplx
+process_spec_v6.dev -p $1.par $1_6.cmplx
+process_spec_v6.dev -p $1.par $1_7.cmplx
+process_spec_v6.dev -p $1.par $1_8.cmplx
+}
+
+{
+csi_teavg.x $1_1 CHO_2dj_2s_1rph
+csi_teavg.x $1_2 CHO_2dj_2s_2rph
+csi_teavg.x $1_3 CHO_2dj_2s_3rph
+csi_teavg.x $1_4 CHO_2dj_2s_4rph
+csi_teavg.x $1_5 CHO_2dj_2s_5rph
+csi_teavg.x $1_6 CHO_2dj_2s_6rph
+csi_teavg.x $1_7 CHO_2dj_2s_7rph
+csi_teavg.x $1_8 CHO_2dj_2s_8rph
+}
+
+combine.x  $1 phan
+
+/bin/rm *.grid_*
+
+
+
+

@@ -1,0 +1,66 @@
+#! /bin/csh -f
+
+# $Header: written by Yan Li 
+# current directory, for example: /data/lsit/brain/yan/2DJ/s1764/Aug10/2DJ/
+
+if ( $#argv != 2 ) then
+      echo Usage: QuantifyLcModel_2DJ rootname options
+      echo '      ' options:
+      echo '               ' f: get the calibration fator from NAA
+      echo '               ' c: calibration the spectra by the factor using FCALIB in control
+      echo '               ' n: do nothing
+      exit 1
+endif 
+
+#---------------------------------------------------
+#        Set up control files for each case
+#        HZPPPM, NUNFIL,DELTAT,ISLICE,TITLE
+#        FILRAW,FILTAB,FILPS,FILCSV,FILCOO
+#---------------------------------------------------
+set current_dir = $PWD
+
+switch ($2)
+   case f
+      set file_dir = ${current_dir}/NAA_cal_factor
+      mkdir ${file_dir}
+      head -14 /home/liyan/.lcmodel/yan/mymodel_7t2DJ.control  > ${file_dir}/head.control
+      echo " NCALIB=1" >> ${file_dir}/head.control
+      echo " CHCALI(1)='NAA'" >> ${file_dir}/head.control
+      echo " FCALIB=1.0" >> ${file_dir}/head.control
+      breaksw
+   case c
+      set file_dir = ${current_dir}/cal_lcmodel
+      mkdir ${file_dir}
+      head -15 /home/liyan/.lcmodel/yan/mymodel_7t2DJ.control  > ${file_dir}/head.control
+      breaksw
+   case n 
+      set file_dir = ${current_dir}/lcmodel
+      mkdir ${file_dir}
+      head -14 /home/liyan/.lcmodel/yan/mymodel_7t2DJ.control  > ${file_dir}/head.control
+      breaksw
+endsw
+
+set FILRAW = ${current_dir}/$1.raw
+set FILTAB = ${file_dir}/$1_table
+set FILPS = ${file_dir}/$1_2DJ.ps
+set FILCSV = ${file_dir}/$1_2DJ.csv
+set FILCOO = ${file_dir}/$1_2DJ_coord
+
+echo " TITLE = '2DJ $1 '" >> ${file_dir}/head.control
+echo " FILRAW = '$FILRAW'" >> ${file_dir}/head.control	
+echo " FILPS = '$FILPS'" >> ${file_dir}/head.control  
+echo " FILTAB = '$FILTAB'" >> ${file_dir}/head.control
+echo " FILCSV = '$FILCSV'" >> ${file_dir}/head.control
+echo " FILCOO = '$FILCOO'" >> ${file_dir}/head.control
+
+tail -12 /home/liyan/.lcmodel/yan/mymodel_7t2DJ.control  > ${file_dir}/tail.control
+
+cat ${file_dir}/head.control ${file_dir}/tail.control > ${file_dir}/$1.control
+
+/bin/rm -r ${file_dir}/head.control
+/bin/rm -r ${file_dir}/tail.control
+
+#----------------------------------------------
+#              LcModel Analysis
+#----------------------------------------------
+/home/liyan/.lcmodel/bin_v6/lcmodel < ${file_dir}/$1.control
