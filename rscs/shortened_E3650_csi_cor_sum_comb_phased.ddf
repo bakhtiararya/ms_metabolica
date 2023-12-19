@@ -1,0 +1,450 @@
+DATA DESCRIPTOR FILE
+version: 6.1
+object type: MR Spectroscopy
+patient id: 32883940
+patient name: CHAMBERLAIN CLAUDIA N.
+patient code: 
+date of birth: 04/28/1967
+sex: 
+study id: 3650
+study code: 
+study date: 12/02/2016
+accession number: 11308105
+root name: E3650_csi_1_fb_cmb_cor_sum
+series number: 6
+series description: 	 SE 3D CSI OBLIQUE
+comment: 
+patient entry: head first
+patient position: supine
+orientation: axial oblique
+data type: floating point
+number of components: 2
+source description: 
+number of dimensions: 4
+dimension 1: type: frequency npoints: 2048 
+dimension 2: type: space npoints: 18 pixel spacing(mm): 10.000000
+dimension 3: type: space npoints: 22 pixel spacing(mm): 10.000000
+dimension 4: type: space npoints: 8 pixel spacing(mm): 10.000001
+center(lps, mm):        4.12500     -30.86160      18.34939
+toplc(lps, mm):       -80.87500    -135.08005      55.61355
+dcos0:        1.00000       0.00000       0.00000
+dcos1:        0.00000       0.99977      -0.02164
+dcos2:        0.00000      -0.02164      -0.99977
+===================================================
+MR Parameters
+coil name: RM:Nova32Ch Hea
+slice gap(mm): 0.000000
+echo time(ms): 20.000000
+repetition time(ms): 2000.000000
+inversion time(ms): 
+flip angle: 90.000000
+pulse sequence name: prose7T_yan
+transmitter frequency(MHz): 298.063629
+isotope: 1H
+field strength(T): 7.000000
+number of sat bands: 9
+sat band 1 thickness(mm): 40.000023
+sat band 1 orientation:               0.00000      -0.92752      -0.37378
+sat band 1 position(lps, mm):        -0.00000      56.93110      22.94230
+sat band 2 thickness(mm): 45.000004
+sat band 2 orientation:              -0.00000      -0.92971       0.36828
+sat band 2 position(lps, mm):        -0.00004    -123.68500      48.99420
+sat band 3 thickness(mm): 45.000000
+sat band 3 orientation:               0.00000       0.99542      -0.09564
+sat band 3 position(lps, mm):         0.00002      69.16690      -6.64526
+sat band 4 thickness(mm): 45.000000
+sat band 4 orientation:               0.00000       0.17909       0.98383
+sat band 4 position(lps, mm):         0.00000       9.45689      51.95210
+sat band 5 thickness(mm): 45.000000
+sat band 5 orientation:               0.85465       0.51299      -0.08008
+sat band 5 position(lps, mm):        65.67320      39.41930      -6.15382
+sat band 6 thickness(mm): 45.000004
+sat band 6 orientation:               0.94073      -0.33488       0.05368
+sat band 6 position(lps, mm):        85.70430     -30.50900       4.89024
+sat band 7 thickness(mm): 45.000000
+sat band 7 orientation:              -0.84999       0.50363      -0.15450
+sat band 7 position(lps, mm):       -54.55800      32.32660      -9.91677
+sat band 8 thickness(mm): 45.000004
+sat band 8 orientation:              -0.94749      -0.31844      -0.02926
+sat band 8 position(lps, mm):       -79.61980     -26.75970      -2.45842
+sat band 9 thickness(mm): 45.000000
+sat band 9 orientation:              -0.00000      -0.17909      -0.98383
+sat band 9 position(lps, mm):        -0.00000      -6.66103     -36.59290
+===================================================
+Spectroscopy Parameters
+localization type: PRESS
+center frequency(MHz): 298.063629
+ppm reference: 4.634953
+sweepwidth(Hz): 1915.655151
+dwelltime(ms): 0.522015
+frequency offset(Hz): 0.000000
+centered on water: yes
+suppression technique: 
+residual water: 
+number of acquisitions: 1
+chop: no
+even symmetry: yes
+data reordered: 
+acq. toplc(lps, mm):      -85.87500     -30.10500      53.34150
+acq. spacing(mm):          10.00000      10.00000      10.00000
+acq. number of data points: 16008
+acq. number of points: 18 1 8
+acq. dcos1:        1.00000       0.00000       0.00000
+acq. dcos2:        0.00000       0.99977      -0.02164
+acq. dcos3:        0.00000      -0.02164      -0.99977
+selection center(lps, mm):       -0.87500     -30.86220      18.34970
+selection size(mm):             170.00000     220.00000      40.00000
+selection dcos1:        1.00000       0.00000       0.00000
+selection dcos2:        0.00000       0.99977      -0.02164
+selection dcos3:        0.00000      -0.02164      -0.99977
+reordered toplc(lps, mm):       -85.87500    -104.23177      54.94569
+reordered center(lps, mm):       -0.87500      -0.01333      17.68154
+reordered spacing(mm):           10.00000      10.00000      10.00000
+reordered number of points: 18 22 8
+reordered dcos1:        1.00000       0.00000       0.00000
+reordered dcos2:        0.00000       0.99977      -0.02164
+reordered dcos3:        0.00000      -0.02164      -0.99977
+===================================================
+
+SUM OF MULTIPLE FILES
+
+weight by square root of sum of squares of weight factors
+
+file:  1  name: E3650_csi_1_fb_cmb_cor_sum.cmplx
+file:  2  name: E3650_csi_2_fb_cmb_cor_sum.cmplx
+file:  3  name: E3650_csi_3_fb_cmb_cor_sum.cmplx
+file:  4  name: E3650_csi_4_fb_cmb_cor_sum.cmplx
+file:  5  name: E3650_csi_5_fb_cmb_cor_sum.cmplx
+file:  6  name: E3650_csi_6_fb_cmb_cor_sum.cmplx
+file:  7  name: E3650_csi_7_fb_cmb_cor_sum.cmplx
+file:  8  name: E3650_csi_8_fb_cmb_cor_sum.cmplx
+file:  9  name: E3650_csi_9_fb_cmb_cor_sum.cmplx
+file:  10  name: E3650_csi_10_fb_cmb_cor_sum.cmplx
+file:  11  name: E3650_csi_11_fb_cmb_cor_sum.cmplx
+file:  12  name: E3650_csi_12_fb_cmb_cor_sum.cmplx
+file:  13  name: E3650_csi_13_fb_cmb_cor_sum.cmplx
+file:  14  name: E3650_csi_14_fb_cmb_cor_sum.cmplx
+file:  15  name: E3650_csi_15_fb_cmb_cor_sum.cmplx
+file:  16  name: E3650_csi_16_fb_cmb_cor_sum.cmplx
+file:  17  name: E3650_csi_17_fb_cmb_cor_sum.cmplx
+file:  18  name: E3650_csi_18_fb_cmb_cor_sum.cmplx
+file:  19  name: E3650_csi_19_fb_cmb_cor_sum.cmplx
+file:  20  name: E3650_csi_20_fb_cmb_cor_sum.cmplx
+file:  21  name: E3650_csi_21_fb_cmb_cor_sum.cmplx
+file:  22  name: E3650_csi_22_fb_cmb_cor_sum.cmplx
+file:  23  name: E3650_csi_23_fb_cmb_cor_sum.cmplx
+file:  24  name: E3650_csi_24_fb_cmb_cor_sum.cmplx
+file:  25  name: E3650_csi_25_fb_cmb_cor_sum.cmplx
+file:  26  name: E3650_csi_26_fb_cmb_cor_sum.cmplx
+file:  27  name: E3650_csi_27_fb_cmb_cor_sum.cmplx
+file:  28  name: E3650_csi_28_fb_cmb_cor_sum.cmplx
+file:  29  name: E3650_csi_29_fb_cmb_cor_sum.cmplx
+file:  30  name: E3650_csi_30_fb_cmb_cor_sum.cmplx
+file:  31  name: E3650_csi_31_fb_cmb_cor_sum.cmplx
+file:  32  name: E3650_csi_32_fb_cmb_cor_sum.cmplx
+DATA DESCRIPTOR FILE
+version: 6.1
+object type: MR Spectroscopy
+patient id: 32883940           
+patient name: CHAMBERLAIN CLAUDIA N.                                         
+patient code: 
+date of birth: 04/28/1967
+sex: 
+study id: 3650           
+study code: 
+study date: 12/02/2016
+accession number: 11308105
+root name: E3650_csi_1_fb_cmb_cor_sum                                 
+series number: 6
+series description: 	 SE 3D CSI OBLIQUE
+comment:                                                                      
+patient entry: head first
+patient position: supine
+orientation: axial oblique
+data type: floating point
+number of components: 2
+source description: 
+number of dimensions: 4
+dimension 1: type: frequency npoints: 2048 
+dimension 2: type: space npoints: 18 pixel spacing(mm): 10.000000
+dimension 3: type: space npoints: 22 pixel spacing(mm): 10.000000
+dimension 4: type: space npoints: 8 pixel spacing(mm): 10.000001
+center(lps, mm):        4.12500     -30.86160      18.34939
+toplc(lps, mm):       -80.87500    -135.08005      55.61355
+dcos0:        1.00000       0.00000       0.00000
+dcos1:        0.00000       0.99977      -0.02164
+dcos2:        0.00000      -0.02164      -0.99977
+MR Parameters
+coil name: RM:Nova32Ch Hea
+slice gap(mm): 0.000000
+echo time(ms): 20.000000
+repetition time(ms): 2000.000000
+inversion time(ms): 
+flip angle: 90.000000
+pulse sequence name: prose7T_yan    
+transmitter frequency(MHz): 298.063629
+isotope: 1H
+field strength(T): 7.000000
+number of sat bands: 9
+sat band 1 thickness(mm): 40.000023
+sat band 1 orientation:               0.00000      -0.92752      -0.37378
+sat band 1 position(lps, mm):        -0.00000      56.93110      22.94230
+sat band 2 thickness(mm): 45.000004
+sat band 2 orientation:              -0.00000      -0.92971       0.36828
+sat band 2 position(lps, mm):        -0.00004    -123.68500      48.99420
+sat band 3 thickness(mm): 45.000000
+sat band 3 orientation:               0.00000       0.99542      -0.09564
+sat band 3 position(lps, mm):         0.00002      69.16690      -6.64526
+sat band 4 thickness(mm): 45.000000
+sat band 4 orientation:               0.00000       0.17909       0.98383
+sat band 4 position(lps, mm):         0.00000       9.45689      51.95210
+sat band 5 thickness(mm): 45.000000
+sat band 5 orientation:               0.85465       0.51299      -0.08008
+sat band 5 position(lps, mm):        65.67320      39.41930      -6.15382
+sat band 6 thickness(mm): 45.000004
+sat band 6 orientation:               0.94073      -0.33488       0.05368
+sat band 6 position(lps, mm):        85.70430     -30.50900       4.89024
+sat band 7 thickness(mm): 45.000000
+sat band 7 orientation:              -0.84999       0.50363      -0.15450
+sat band 7 position(lps, mm):       -54.55800      32.32660      -9.91677
+sat band 8 thickness(mm): 45.000004
+sat band 8 orientation:              -0.94749      -0.31844      -0.02926
+sat band 8 position(lps, mm):       -79.61980     -26.75970      -2.45842
+sat band 9 thickness(mm): 45.000000
+sat band 9 orientation:              -0.00000      -0.17909      -0.98383
+sat band 9 position(lps, mm):        -0.00000      -6.66103     -36.59290
+Spectroscopy Parameters
+localization type: PRESS
+center frequency(MHz): 298.063629
+ppm reference: 4.634953
+sweepwidth(Hz): 1915.655151
+dwelltime(ms): 0.522015
+frequency offset(Hz): 0.000000
+centered on water: yes
+suppression technique: 
+residual water: 
+number of acquisitions: 1
+chop: no
+even symmetry: yes
+data reordered: 
+acq. toplc(lps, mm):      -85.87500     -30.10500      53.34150
+acq. spacing(mm):          10.00000      10.00000      10.00000
+acq. number of data points: 16008
+acq. number of points: 18 1 8
+acq. dcos1:        1.00000       0.00000       0.00000
+acq. dcos2:        0.00000       0.99977      -0.02164
+acq. dcos3:        0.00000      -0.02164      -0.99977
+selection center(lps, mm):       -0.87500     -30.86220      18.34970
+selection size(mm):             170.00000     220.00000      40.00000
+selection dcos1:        1.00000       0.00000       0.00000
+selection dcos2:        0.00000       0.99977      -0.02164
+selection dcos3:        0.00000      -0.02164      -0.99977
+reordered toplc(lps, mm):       -85.87500    -104.23177      54.94569
+reordered center(lps, mm):       -0.87500      -0.01333      17.68154
+reordered spacing(mm):           10.00000      10.00000      10.00000
+reordered number of points: 18 22 8
+reordered dcos1:        1.00000       0.00000       0.00000
+reordered dcos2:        0.00000       0.99977      -0.02164
+reordered dcos3:        0.00000      -0.02164      -0.99977
+DATA DESCRIPTOR FILE
+version: 6.1
+object type: MR Spectroscopy
+patient id: 32883940           
+patient name: CHAMBERLAIN CLAUDIA N.                                         
+patient code: 
+date of birth: 04/28/1967
+sex: 
+study id: 3650           
+study code: 
+study date: 12/02/2016
+accession number: 11308105
+root name: E3650_csi_1_fb                                             
+series number: 6
+series description: 	 SE 3D CSI OBLIQUE
+comment:                                                                      
+patient entry: head first
+patient position: supine
+orientation: axial oblique
+data type: floating point
+number of components: 2
+source description: 
+number of dimensions: 4
+dimension 1: type: frequency npoints: 2048 
+dimension 2: type: space npoints: 18 pixel spacing(mm): 10.000000
+dimension 3: type: space npoints: 22 pixel spacing(mm): 10.000000
+dimension 4: type: space npoints: 8 pixel spacing(mm): 10.000001
+center(lps, mm):        4.12500     -30.86160      18.34940
+toplc(lps, mm):       -80.87500    -135.08005      55.61355
+dcos0:        1.00000       0.00000       0.00000
+dcos1:        0.00000       0.99977      -0.02164
+dcos2:        0.00000      -0.02164      -0.99977
+MR Parameters
+coil name: RM:Nova32Ch Hea
+slice gap(mm): 0.000000
+echo time(ms): 20.000000
+repetition time(ms): 2000.000000
+inversion time(ms): 
+flip angle: 90.000000
+pulse sequence name: prose7T_yan    
+transmitter frequency(MHz): 298.063629
+isotope: 1H
+field strength(T): 7.000000
+number of sat bands: 9
+sat band 1 thickness(mm): 40.000023
+sat band 1 orientation:               0.00000      -0.92752      -0.37378
+sat band 1 position(lps, mm):        -0.00000      56.93110      22.94230
+sat band 2 thickness(mm): 45.000004
+sat band 2 orientation:              -0.00000      -0.92971       0.36828
+sat band 2 position(lps, mm):        -0.00004    -123.68500      48.99420
+sat band 3 thickness(mm): 45.000000
+sat band 3 orientation:               0.00000       0.99542      -0.09564
+sat band 3 position(lps, mm):         0.00002      69.16690      -6.64526
+sat band 4 thickness(mm): 45.000000
+sat band 4 orientation:               0.00000       0.17909       0.98383
+sat band 4 position(lps, mm):         0.00000       9.45689      51.95210
+sat band 5 thickness(mm): 45.000000
+sat band 5 orientation:               0.85465       0.51299      -0.08008
+sat band 5 position(lps, mm):        65.67320      39.41930      -6.15382
+sat band 6 thickness(mm): 45.000004
+sat band 6 orientation:               0.94073      -0.33488       0.05368
+sat band 6 position(lps, mm):        85.70430     -30.50900       4.89024
+sat band 7 thickness(mm): 45.000000
+sat band 7 orientation:              -0.84999       0.50363      -0.15450
+sat band 7 position(lps, mm):       -54.55800      32.32660      -9.91677
+sat band 8 thickness(mm): 45.000004
+sat band 8 orientation:              -0.94749      -0.31844      -0.02926
+sat band 8 position(lps, mm):       -79.61980     -26.75970      -2.45842
+sat band 9 thickness(mm): 45.000000
+sat band 9 orientation:              -0.00000      -0.17909      -0.98383
+sat band 9 position(lps, mm):        -0.00000      -6.66103     -36.59290
+Spectroscopy Parameters
+localization type: PRESS
+center frequency(MHz): 298.063629
+ppm reference: 4.634953
+sweepwidth(Hz): 1915.655151
+dwelltime(ms): 0.522015
+frequency offset(Hz): 0.000000
+centered on water: yes
+suppression technique: 
+residual water: 
+number of acquisitions: 1
+chop: no
+even symmetry: yes
+data reordered: 
+acq. toplc(lps, mm):      -85.87500     -30.10500      53.34150
+acq. spacing(mm):          10.00000      10.00000      10.00000
+acq. number of data points: 16008
+acq. number of points: 18 1 8
+acq. dcos1:        1.00000       0.00000       0.00000
+acq. dcos2:        0.00000       0.99977      -0.02164
+acq. dcos3:        0.00000      -0.02164      -0.99977
+selection center(lps, mm):       -0.87500     -30.86220      18.34970
+selection size(mm):             170.00000     220.00000      40.00000
+selection dcos1:        1.00000       0.00000       0.00000
+selection dcos2:        0.00000       0.99977      -0.02164
+selection dcos3:        0.00000      -0.02164      -0.99977
+reordered toplc(lps, mm):       -85.87500    -104.23177      54.94569
+reordered center(lps, mm):       -0.87500      -0.01333      17.68154
+reordered spacing(mm):           10.00000      10.00000      10.00000
+reordered number of points: 18 22 8
+reordered dcos1:        1.00000       0.00000       0.00000
+reordered dcos2:        0.00000       0.99977      -0.02164
+reordered dcos3:        0.00000      -0.02164      -0.99977
+[process_spec]
+fftpars0.cfttype = nmr FID/echo, frequency reversed
+fftpars0.fttype = 1
+fftpars0.nzeroafter = 944
+fftpars0.nzerobefore = 0
+fftpars0.nzerodata = 0
+fftpars1.cfttype = kspace echo
+fftpars1.fttype = 3
+fftpars1.nzeroafter = 0
+fftpars1.nzerobefore = 0
+fftpars1.nzerodata = 0
+fftpars2.cfttype = kspace echo
+fftpars2.fttype = 3
+fftpars2.nzeroafter = 0
+fftpars2.nzerobefore = 0
+fftpars2.nzerodata = 0
+fftpars3.cfttype = kspace echo
+fftpars3.fttype = 3
+fftpars3.nzeroafter = 0
+fftpars3.nzerobefore = 0
+fftpars3.nzerodata = 0
+filtered = y
+filtpars0.cftype = lorentzian
+filtpars0.fpars0 = 4
+filtpars0.fpars1 = 0
+filtpars0.fpars2 = 0
+filtpars0.ftype = 2
+filtpars0.nfpars = 1
+filtpars1.cftype = none
+filtpars1.fpars0 = 0
+filtpars1.fpars1 = 0
+filtpars1.fpars2 = 0
+filtpars1.ftype = 0
+filtpars1.nfpars = 0
+filtpars2.cftype = none
+filtpars2.fpars0 = 0
+filtpars2.fpars1 = 0
+filtpars2.fpars2 = 0
+filtpars2.ftype = 0
+filtpars2.nfpars = 0
+filtpars3.cftype = none
+filtpars3.fpars0 = 0
+filtpars3.fpars1 = 0
+filtpars3.fpars2 = 0
+filtpars3.ftype = 0
+filtpars3.nfpars = 0
+fouriertransform = y
+fptphasecorrect = n
+freqcor.elim = 0
+freqcor.file = 
+freqcor.peakloc = 0
+freqcor.width = 0
+freqcorrect = n
+inputfile = 
+originshift = y
+output_type = 
+outputfile = E3650_csi_1_fb_cmb_phased.cmplx
+phasecorrected = y
+phasepars.a0 = 0
+phasepars.a1 = 0
+phasepars.pivot = 1497
+phfile = 
+phfiltpars0.cftype = lorentzian
+phfiltpars0.fpars0 = 4
+phfiltpars0.fpars1 = 0
+phfiltpars0.fpars2 = 0
+phfiltpars0.ftype = 2
+phfiltpars0.nfpars = 1
+phfiltpars1.cftype = none
+phfiltpars1.fpars0 = 0
+phfiltpars1.fpars1 = 0
+phfiltpars1.fpars2 = 0
+phfiltpars1.ftype = 0
+phfiltpars1.nfpars = 0
+phfiltpars2.cftype = none
+phfiltpars2.fpars0 = 0
+phfiltpars2.fpars1 = 0
+phfiltpars2.fpars2 = 0
+phfiltpars2.ftype = 0
+phfiltpars2.nfpars = 0
+phfiltpars3.cftype = none
+phfiltpars3.fpars0 = 0
+phfiltpars3.fpars1 = 0
+phfiltpars3.fpars2 = 0
+phfiltpars3.ftype = 0
+phfiltpars3.nfpars = 0
+program = process_spec_v6
+shiftpars0.kshift = 0
+shiftpars0.spacecent = 0
+shiftpars1.kshift = 0
+shiftpars1.spacecent = 4.125
+shiftpars2.kshift = 0
+shiftpars2.spacecent = -30.8616
+shiftpars3.kshift = 0
+shiftpars3.spacecent = 18.3494
+specloc.col1 = 1
+specloc.col2 = 2048
+specsample = n

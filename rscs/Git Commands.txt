@@ -1,0 +1,8 @@
+git clone https://github.com/amitvakula/autophasing-mrs
+
+cd autophasing-mrs/
+
+git push origin master
+
+
+git commit -m "updated source code which attempts to plot a ddf file in matlab"
