@@ -1,0 +1,49 @@
+#!/usr/bin/perl -w 
+
+use strict;
+use MRSCUtil_v6;
+
+
+my($path, $thing, @things);
+my($sid,$tnum);
+
+my $datafile = "/home/forrest/bin/data_files/gbm_list.txt";
+
+open(FILE, $datafile) or die "Could not open $datafile";
+
+while(<FILE>) {
+  next if m/^#/ or m/^\s*$/;
+  ($sid, $tnum) = m/(s.+):(t.+)/;
+  if(-d "/data/spore/3T/$sid/$tnum/") {
+    $path = "/data/spore/3T/$sid/$tnum/";
+  }
+  else {$path = "/data/spore/$sid/$tnum";}
+  chdir $path or die "could not chdir to $path";
+  if(($tnum eq "t_") or ($tnum eq "t__")) {$tnum = "tnum";}
+
+  @things = ("perf_align_rigid/linear_fit/${tnum}_lin_cbvnr.idf",
+             "perf_align_rigid/non_parametric/${tnum}_rpeakr.idf",
+             "perf_align_rigid/non_parametric/${tnum}_recovr.idf",
+             "spore_rois/${tnum}_cel.idf",
+             "spore_rois/${tnum}_t2all.idf",
+             "spore_rois/${tnum}_nec.idf");
+  print "$sid/$tnum:\n";
+  foreach $thing (@things) {
+    unless(-e $thing) {
+      print "\t$thing not found.\n";
+    }
+  }
+  unless(-e "temp_diffu/${tnum}_adca.idf") {
+    unless(-e "temp_diffu2/${tnum}_adca.idf") {
+      print "\ttemp_diffu[2]/${tnum}adca.idf not found\n";
+    }
+  }
+
+  unless(-e "spore_rois/${tnum}_fsea_wm.idf") {
+    unless(-e "spore_rois/${tnum}_t1va_wm.idf") {
+      print "\tspore_rois/${tnum}_fsea[t1va]_wm.idf not found\n";
+    }
+  }
+
+}
+

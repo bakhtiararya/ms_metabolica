@@ -1,0 +1,29 @@
+#!/usr/bin/perl -w
+
+use MRSCUtil;
+use strict;
+
+my($path, $spore_id);
+my($ref, $current) = @ARGV;
+usage() unless(@ARGV == 2);
+
+unless(dir_grep("images", "fla")) {
+  system "align_intra -a $current";
+}
+
+$path = `pwd`;
+if($path =~ m/(s\d{4})/) {
+  $spore_id = $1;
+}
+else {die "No path found\n";}
+
+system "align_inter -d /data/spore/$spore_id/$ref/images/ $ref $current";
+
+
+
+sub usage {
+
+  print "align_spore reference current\n";
+  exit 1;
+
+}

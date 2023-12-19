@@ -1,0 +1,317 @@
+#!/usr/bin/perl -w
+
+#   $URL: https://intrarad.ucsf.edu/svn/rad_software/surbeck/brain/DB/nelson_ncvi/trunk/data_upload_qr_scripts/upload_tissue_samples $
+#   $Rev: 31671 $
+#   $Author: jasonc@RADIOLOGY.UCSF.EDU $
+#   $Date: 2014-05-21 10:02:56 -0700 (Wed, 21 May 2014) $
+#
+#   Specialized data upload script to parse biposy event data from an excel spread sheet and generate 
+#   biopsy events in the DB. 
+#
+
+use strict;
+use DBI;
+use DBD::Pg;
+use Getopt::Long;
+Getopt::Long::config("bundling");
+use Pod::Usage;
+use File::Spec;
+use Cwd;
+use Cwd 'abs_path';
+require SET_BRAIN_MODULES;
+use Spreadsheet::ParseExcel;
+
+sub do_sfnum_and_bnum_match($$);
+
+my $script    = $0;
+
+our $xl_row; 
+
+
+##########################
+# read in arguments
+##########################
+my ($debug, $spreadsheet_name); 
+
+GetOptions(
+    "xl=s"       => \$spreadsheet_name,
+    "D"          => \$debug
+) or pod2usage(-verbose=>2, -exitval=>2);
+
+if (!defined $spreadsheet_name ) {
+    pod2usage(-verbose=>2, -exitval=>2);
+}
+
+
+##########################
+#   Connect to DB:
+##########################
+BRAIN_DB::brain_db_set_env( $script );
+my $dbh = BRAIN_DB::brain_db_get_connection();
+
+
+my $parser   = Spreadsheet::ParseExcel->new();
+
+my $fname = $spreadsheet_name; 
+my $workbook = $parser->parse($fname);
+
+if ( !defined $workbook ) {
+    die $parser->error(), ".\n";
+}
+
+my ($sf_num, $b_num); 
+
+for my $worksheet ( $workbook->worksheets() ) {
+
+    my $worksheet_name = $worksheet->get_name(); 
+
+    print "\n\n########################\n";
+    print "WORKSHEET_NAME: $worksheet_name \n";
+    print "########################\n\n\n";
+
+    if ($worksheet_name ne "CHECKLIST") { 
+        next;
+    }
+
+        
+    my ( $row_min, $row_max ) = $worksheet->row_range();
+    my ( $col_min, $col_max ) = $worksheet->col_range();
+
+    for $xl_row ( $row_min .. $row_max ) {
+
+        print "\n\n"; 
+        print "==========================================\n"; 
+        print "Next row = $xl_row \n";
+        print "\n"; 
+
+        #   parse the first 3 rows
+        #       sf#, b#, t#
+        my $cell_sf_num       = $worksheet->get_cell( $xl_row, 3 );
+        my $cell_vial_num     = $worksheet->get_cell( $xl_row, 4 );
+        my $cell_vial_color   = $worksheet->get_cell( $xl_row, 5 );
+
+        my $last_sf_num; 
+        #my $last_b_num; 
+        #if ( $b_num ne "" && $sf_num ne "" ) {
+            #$last_sf_num = $sf_num; 
+            #$last_b_num = $b_num; 
+        #}
+
+        #   sf number
+        $sf_num = "";
+        if (defined $cell_sf_num) {
+            $sf_num = $cell_sf_num->value(); 
+            if ( $sf_num =~ m/(\d+)\b/ ) { 
+                $sf_num = $1; 
+            } else {
+                $sf_num = ""; 
+            }
+        }
+
+        #   b number
+        $b_num = ""; 
+        #if (defined $cell_b_num) {
+            #$b_num  = $cell_b_num->value(); 
+            #if ( $b_num =~ m/b(\d+)\b.*/ ) {
+                #$b_num  = $1; 
+            #} else {
+                #$b_num = ""; 
+            #} 
+        #}
+
+        #
+        #   Is this a duplicate row:  same b/t/sf, but different tissue sample:
+        #
+        if ( $sf_num eq "" ) {
+        #if ( $sf_num eq "" and $b_num eq "") {
+            $sf_num = $last_sf_num; 
+            #$b_num = $last_b_num; 
+        }
+
+        #   vial_num and color
+        my $vial_num = ""; 
+        if (defined $cell_vial_num) {
+            $vial_num= $cell_vial_num->value(); 
+            if ( $vial_num =~ m/(\S+)\b/ ) { 
+                $vial_num = $1; 
+            } else {
+                $vial_num = ""; 
+            }
+        }
+
+        my $vial_color = ""; 
+        if (defined $cell_vial_color) {
+            $vial_color = $cell_vial_color->value(); 
+
+            if (0) {
+            #if ( $vial_color =~ m/(.*)\((.*)\)/ ) {
+                $vial_color =  uc( $1 ); 
+                if ($vial_color eq "T") {
+                    $vial_color = "TARGET"
+                } elsif ( $vial_color eq "T1" ) {    
+                    $vial_color = "TARGET1"
+                } elsif ( $vial_color eq "T2" ) {    
+                    $vial_color = "TARGET2"
+                } elsif ( $vial_color eq "T3" ) {    
+                    $vial_color = "TARGET3"
+                } elsif ( $vial_color eq "T4" ) {    
+                    $vial_color = "TARGET4"
+                } elsif ( $vial_color eq "T5" ) {    
+                    $vial_color = "TARGET5"
+                } elsif ( $vial_color eq "B" ) {    
+                    $vial_color = "BLUE"
+                } elsif ( $vial_color eq "B1" ) {    
+                    $vial_color = "BLUE1"
+                } elsif ( $vial_color eq "B2" ) {    
+                    $vial_color = "BLUE2"
+                } elsif ( $vial_color eq "B3" ) {    
+                    $vial_color = "BLUE3"
+                } elsif ( $vial_color eq "B4" ) {    
+                    $vial_color = "BLUE4"
+                } elsif ( $vial_color eq "B5" ) {    
+                    $vial_color = "BLUE5"
+                } elsif ( $vial_color eq "V" ) {    
+                    $vial_color = "VIOLET"
+                } elsif ( $vial_color eq "V1" ) {    
+                    $vial_color = "VIOLET1"
+                } elsif ( $vial_color eq "V2" ) {    
+                    $vial_color = "VIOLET2"
+                } elsif ( $vial_color eq "V3" ) {    
+                    $vial_color = "VIOLET3"
+                } elsif ( $vial_color eq "Y" ) {    
+                    $vial_color = "YELLOW"
+                } elsif ( $vial_color eq "Y1" ) {    
+                    $vial_color = "YELLOW1"
+                } elsif ( $vial_color eq "Y2" ) {    
+                    $vial_color = "YELLOW2"
+                } elsif ( $vial_color eq "P" ) {    
+                    $vial_color = "PINK"
+                } elsif ( $vial_color eq "P1" ) {    
+                    $vial_color = "PINK1"
+                } elsif ( $vial_color eq "P2" ) {    
+                    $vial_color = "PINK2"
+                } elsif ( $vial_color eq "G" ) {    
+                    $vial_color = "GREEN"
+                } elsif ( $vial_color eq "G1" ) {    
+                    $vial_color = "GREEN1"
+                } elsif ( $vial_color eq "G2" ) {    
+                    $vial_color = "GREEN2"
+                } else {
+                    print "ERROR: could not determine color: $vial_color\n";
+                    $vial_color = "";
+                }
+
+            } 
+        }
+      
+        if ($debug) {
+            print "SFNUM: $sf_num \n";
+            #print "BNUM: $b_num \n";
+            print "VNUM: $vial_num\n";
+            print "VCOL: $vial_color\n";
+        }
+
+        if ( $sf_num ne "" && $vial_num ne "" && $vial_color ne "" ) {
+        #if ( $b_num ne "" && $sf_num ne "" && $vial_num ne "" && $vial_color ne "" ) {
+                
+            #
+            #   Verify that the sfnumber and bnumber match before creating a new event: 
+            #
+            if ( 1 ) {
+            #if ( do_sfnum_and_bnum_match($sf_num, $b_num) ) { 
+
+                #
+                #   create a new event
+                #
+                my $insert_sample_script = "/home/jasonc/svn/surbeck/brain/DB/nelson_ncvi/trunk/data_upload_qr_scripts/insert_tissue_sample";
+                if ( $script =~ m/\.dev$/ ) { 
+                    $insert_sample_script .= ".dev";
+                }    
+                my $cmd = "$insert_sample_script --sf_num $sf_num --vial_num $vial_num --vial_color $vial_color";
+                print "INSERT(sf:$sf_num, v:$vial_num, color:$vial_color): $cmd \n"; 
+                if ( system($cmd) ) {
+                    print "##########################\n";
+                    print "ERROR: failed running $cmd\n";
+                    print "##########################\n";
+                }
+            } else {
+                print "ERROR(invalid args): sf# do not correspond: $sf_num\n";
+                #print "ERROR(invalid args): b# and sf# do not correspond: $b_num, $sf_num\n";
+            }
+        } else {
+            print "ERROR(invalid args): Can not determine input args for sample insertion(b, sf, v#, v_color): $b_num, $sf_num, $vial_num, $vial_color\n";
+        } 
+    }
+        
+}
+
+################################################################
+#   Subroutines
+################################################################
+
+
+#
+#   returns true or false for sfnum/bnum match check
+#
+sub do_sfnum_and_bnum_match($$)
+{
+
+    my ($sf_num, $bnum) = @_; 
+
+    #   
+    #   match is by default 0 (does not match)      
+    #   
+    my $match = 0;  
+
+    #-----------------------------------------------------------
+    #   See if the brain id and t number are consistent: 
+    #-----------------------------------------------------------
+    my $brain_id_from_db = "-1"; 
+
+    my $sql = "select select_brain_id_from_sfnum('$sf_num')";
+    my $sth = $dbh->prepare($sql); 
+    $sth->execute() or die "ERROR: Could not execute stored procedure $sql\n";
+    
+    my $rows = $sth->rows;
+    #print "rows: $rows\n"; 
+    if ( $rows > 0 ) {
+        if (my @arr = $sth->fetchrow_array()) {
+            if ( defined $arr[0] ) {
+                if ($arr[0] > 0) {
+                    $brain_id_from_db = $arr[0];
+                }
+            }
+        }
+    }
+   
+    if ( $brain_id_from_db == $bnum ) {
+        $match = 1; 
+    } else {
+        print "\n\t"; 
+        print $xl_row + 1 . ": bnumber and sf_number on spreadsheet are NOT consistent: $bnum, $sf_num \n"; 
+        print "\t\tbrain_id from db: $brain_id_from_db\n"; 
+    }
+
+    return $match;  
+}
+
+
+###############################################################################
+#
+#   POD Usage docs
+#
+###############################################################################
+
+=head1 NAME
+
+    upload_tissue_samples
+
+=head1 SYNOPSIS
+
+    upload_tissue_samples --xl spreadsheet_name
+
+        --xl    spreadsheet_name    path to spreadsheet to upload. 
+        -d                          Print debugging messages.
+
+=cut
+

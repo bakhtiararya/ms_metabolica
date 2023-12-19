@@ -1,0 +1,253 @@
+#!/usr/bin/perl
+
+#
+# 3t_perf - a program for processing perfusion data at 
+#           original 128 x 128 resolution. 
+#         - for 3T data that has enough SNR
+#  
+# Written by Forrest Crawford, Janine Lupo, and Michael Lee
+# July 2004
+# University of California, San Franicsco
+
+
+use strict;
+use MRSCUtil_v5;
+use Getopt::Long;
+use IMAGE_HEADER;
+
+my($perf_path, $anatomical_path, $help, $non_param, $fit_method);
+my($xdim, $ydim, $fov_x, $fov_y);
+
+###################################################
+
+Getopt::Long::config("bundling");
+GetOptions("n" => \$non_param, "f=s" => \$fit_method, "p=s" => \$perf_path, "a=s" =>\$anatomical_path, "h" => \$help);
+
+unless(@ARGV) {usage();}
+
+init();
+exit(0);
+
+######################################
+sub init {
+  my($t_num, $num_images, @count);
+  my(@results, $exam_dir);
+  my($n_par, $n_lin, $lin);
+
+  # set up flags 
+  $n_par=0;
+  $n_lin=0;  
+  $lin=0;
+
+  # set mask with group write and no world read, write or execute.
+  umask 007; 
+
+  print "Initializing ...\n";
+  $t_num = $ARGV[0];
+  unless($t_num) {usage();}
+
+  check_mkdir("perf", 02770, "brain");
+  
+  @results = <E*>;
+
+  # print "@results\n";
+  unless(@results == 1) {die "More than one Exam directory found.\n";}
+  $exam_dir = $results[0];
+
+  #
+  # if the paths are not specified, find the appropriate series.
+  # if we fail to find either, ask user to specify.
+  #
+
+
+  unless($anatomical_path and $perf_path) {
+    ($anatomical_path, $perf_path) = find_series($exam_dir);
+  }
+  unless($anatomical_path) {
+    print "Series matching SPGR POST GAD not found.  Please specify.\n\n";
+  }
+  unless($perf_path) {
+    print "Series matching PERFUSION not found.";
+  }
+  
+  #
+  # if the images have already been imported, skip import
+  #
+
+  system "gunzip -q -f $perf_path/*.gz";
+  system "gunzip -q -f $anatomical_path/*.gz";
+
+  unless(dir_grep('perf', "first\.int2")) {
+    print "Importing first time point of dynamic series"; 
+    system "import --volume=1 $perf_path perf/${t_num}_first";
+  }
+
+  unless(dir_grep('perf', "dynamic\.int2")) {
+    print "Importing entire dynamic series";
+    @count = glob "$perf_path/*";
+    $num_images = @count;
+    system "import -f 1 -l $num_images $perf_path perf/${t_num}_dynamic";
+  }
+
+  unless(dir_grep('perf', "t1c\.int2")) {
+    print "Importing SPGR Series";
+    system "import $anatomical_path perf/${t_num}_t1c";
+  }
+
+  #
+  # go into perf directory, force correct S/I order, and run process_perf
+  #
+
+  chdir "perf" or die "Could not chdir into perf.";
+
+  system "mv ${t_num}_first_1.int2 ${t_num}_first.int2";
+  system "mv ${t_num}_first_1.idf ${t_num}_first.idf";
+    
+  system "fix_rootname.x ${t_num}_first";
+  system "force_dynamic_si.x ${t_num}_dynamic ${t_num}_first ${t_num}_dynamic";
+  system "process_perf_3T ${t_num} 96 96 195 195";
+
+  chmod(0770, "*");
+
+#
+# create appropriate directories based on chosen fit method
+#
+
+  if($non_param) {
+    check_mkdir("non_parametric", 02770, "brain");
+    $n_par = 1;
+  }
+
+  if($fit_method) {
+    unless($fit_method eq "linear" or $fit_method eq "nonlinear"){
+      die "Invalid fit method... aborting\n";
+    }  
+
+    if($fit_method eq "nonlinear"){
+      check_mkdir("nonlin_fit", 02770, "brain");
+      system "fit_perfusion.x ${t_num}_dynamic_mr nonlin_fit/${t_num}_nonlin";
+      $n_lin = 1;
+      system("chmod 660 nonlin_fit/*");
+    } 
+  
+    if($fit_method eq "linear"){
+      check_mkdir("linear_fit", 02770, "brain"); 
+      $lin=1;
+    }
+  }
+ 
+  unless($non_param or $fit_method){
+     check_mkdir("non_parametric", 02770, "brain");
+     check_mkdir("linear_fit", 02770, "brain");
+     check_mkdir("nonlin_fit", 02770, "brain");
+
+     system "fit_perfusion.x ${t_num}_dynamic_mr nonlin_fit/${t_num}_nonlin";
+
+     $n_lin=1; $lin=1; $n_par=1;
+     system("chmod 660 nonlin_fit/*");
+   }
+
+#  system("matlab -nojvm -nosplash -nodisplay -r "calc_perf(\'$t_num\',$lin,$n_lin,$n_par); exit\"");
+
+   open MATLAB, "|matlab -nojvm " or die "could not open matlab";
+   print MATLAB "calc_perf('$t_num', $lin, $n_lin, $n_par); exit";
+
+}
+
+##############################
+
+##############################
+
+#
+# use the IMAGE_HEADER module to find the right series to import.
+#
+
+
+sub find_series {
+  print "Finding SPGR and perfusion series\n";
+  my $exam_dir = shift;
+  my($series, $image, @images);
+  my @series_dirs = glob("$exam_dir/*");
+  foreach $series (@series_dirs) {
+    @images = glob("$series/E*");
+    $image = $images[0];
+    #print "image is $image\n";
+
+    #
+    # find the series number
+    #
+      
+    if($image =~ m/(E\d+\/\d+)\//) {
+      $series = $1;
+    }
+    else {print "series num not found\n";}
+    
+    #
+    # set the series description for the current series
+    # if there is no series matching SPGR POST GAD, then
+    # try to find something named SPGR instead.
+    # 
+    my $series_description = (get_attributes($image, 'series_description'))[0];
+  
+    if($series_description =~ m/PERFUSION/i) {
+      $perf_path = $series;
+    }
+    if($series_description =~ m/SPGR POST GAD/i) {
+      $anatomical_path = $series;
+    }
+    elsif($perf_path and not $anatomical_path and ($series_description =~ m/SPGR/i)) {
+      $anatomical_path = $series;
+    }
+  } 
+  return ($anatomical_path, $perf_path);
+}
+
+#################################
+
+sub usage {
+
+  print <<"EOF";
+
+ Usage: 3t_perf t_number [-n] [-f fit_method] [-a anatomical_series] 
+                        [-p perfusion_series]
+
+   -n                       Calculates non-parametric curve characteristics
+
+   -f fit method            Specify 'linear' or 'nonlinear' fitting method 
+                            for parameter calculations
+
+   -a anatomical series     Specify an anatomical imaging series to
+                            be resampled to the dynamic data.  SPGR
+			    is the default series.
+
+   -p perfusion series      Specify the perfusion series to be used.  
+
+   -h                       Prints verbose usage
+
+   default calculates non-parametric features plus both fit-types 
+
+EOF
+
+print <<"EOF" if $help; 
+ 
+   3t_perf imports into the perf directory the SPGR, the perfusion 
+   first timepoint, and the perfusion dynamic series in S/I order.  
+   It then runs process_perf, which resamples various files and generates 
+   a .cmplx file of perfusion curves. It then does linear and nonlinear 
+   gamma variate fitting procedures which are then to calculate all sorts
+   of nifty cbv parameters, normalizes them, and puts them into appropriate
+   directories.
+
+   3t_perf should work for both dicom and .MR files. 
+
+   A combined effort from Annette Chan, Forrest Crawford, Micheal Lee,
+   and Janine Lupo.
+
+  University of California, San Francisco
+  August 2004
+ 
+
+EOF
+
+  exit(1);
+}

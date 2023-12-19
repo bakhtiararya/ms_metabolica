@@ -1,0 +1,72 @@
+#!/usr/bin/perl
+#
+#   $Header: /opt/src/cvsroot/brain/add_spec_wrapper/add_spec_multifile,v 1.3 2007/08/07 17:28:42 jasonc Exp $
+#
+
+use MRSCUtil_v6;
+use Getopt::Long;
+Getopt::Long::config("bundling");
+
+$DEV = 0;
+$SCRIPT = $0;
+print "script: $SCRIPT\n";
+if ($SCRIPT =~ m/\.*.dev/) {
+    $DEV = 1;
+}
+
+$add_spec_bin = "add_spec_v6";
+if ($DEV) {
+    $add_spec_bin .= ".dev";
+}
+
+$numFiles = 1; 
+
+GetOptions(
+           "n=i"       => \$numFiles,
+           "r=s"       => \$rootName,
+           "w=s"       => \$wt,
+           "h"         => \$help
+) or usage(); 
+
+if ($help) {
+    usage();
+}
+
+if (!defined $numFiles || !defined $rootName || !defined $wt) {
+    usage();
+}
+
+# use normalized wt:
+$wt = $wt/$numFiles;
+
+$x_file = "add_spec_input.x";
+
+open(ADD, ">$x_file") || die $!;
+
+printf(ADD "${numFiles}\n"); 
+for ($i=1; $i<=$numFiles; $i++) {
+    printf(ADD "${rootName}_${i}.cmplx\n"); 
+    printf(ADD "${wt}\n"); 
+}
+printf(ADD "${rootName}_lc\n"); 
+close(ADD);
+
+$cmd = "${add_spec_bin} < ${x_file}";
+print "$cmd\n";
+system($cmd);
+
+
+sub usage() {
+     print << "EndofUsage";
+
+        add_spec_multifile -r rootName -n numFiles -w wtFactor [ -h ] 
+
+        -w  wt factor for lc (gets divided by numFiles)
+
+EndofUsage
+
+exit 1;
+}
+
+
+

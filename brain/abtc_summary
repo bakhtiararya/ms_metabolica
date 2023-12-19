@@ -1,0 +1,36 @@
+#!/usr/bin/perl
+
+
+use Getopt::Long;
+Getopt::Long::config("bundling");
+
+GetOptions(
+           "e"                  => \$exam
+);
+
+if ( !defined $exam ) {
+    print "usage: abtc_summary -e exam\n";  
+    exit(1);
+}
+
+@exam = glob("E*");
+
+foreach (@exam) {
+    print "EXAM:  $exam \n";
+    chdir ($_); 
+    @series = glob("S*");
+    foreach $ser (@series)  {
+        @images = glob ("$ser/*.DCM"); 
+        $dd = ""; 
+        if ( defined $images[0] ) {
+            $cmd = "dcmdump -q +P 0008,103e $images[0] | grep -i seriesdescription "; 
+            $dd = `$cmd`; 
+        }
+        if ( $? ) {
+            print "ERROR: $ser: $images[0]\n\n";
+        } else {
+            $dd =~ s/.*\[(.*)\].*/$1/;  
+            print "$ser: $dd\n";
+        }
+    }
+}

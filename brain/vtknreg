@@ -1,0 +1,18 @@
+#!/bin/csh 
+#
+#   $URL: https://intrarad.ucsf.edu/svn/rad_software/surbeck/brain/vtk_registration/trunk/vtknreg $
+#   $Rev: 23549 $
+#   $Author: jasonc@RADIOLOGY.UCSF.EDU $
+#   $Date: 2012-02-15 14:44:22 -0800 (Wed, 15 Feb 2012) $
+#
+
+if ( `is_rad_grid` ) then
+
+    /netopt/bin/local/brain/vtkCISG/bin/vtknreg $*
+
+else
+
+    /data/bin/local/brain/vtkCISG/bin/vtknreg $*
+
+endif
+

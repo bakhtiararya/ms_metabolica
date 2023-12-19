@@ -1,0 +1,58 @@
+#!/usr/bin/perl -w
+#-----------------------------------------------------------------------------#
+#Wrapper that aligns rigidly adc maps and t2d images to the FLAIR of the Exam #
+#rc 2005                                                                      #
+#-----------------------------------------------------------------------------#
+use strict;
+use MRSCUtil;
+
+usage() unless @ARGV == 1; 
+
+my $align_image = "/home/forrest/bin/align_image";
+my $align = "vtkareg_grid.x";
+my $apply_trans = "vtktransformation_grid.x";
+my($tnumber) = @ARGV;
+my $directory = `pwd`;
+my $diffu ="";
+chomp $directory;
+
+if (-d "temp_diffu")
+   {$diffu ="temp_diffu";}
+elsif (-d "temp_diffu2")
+   {$diffu ="temp_diffu2";}
+elsif (-d "diffu")
+   {$diffu ="diffu";}
+elsif (-d "temp_diffu_w_no_asset")
+   {$diffu ="temp_diffu_w_no_asset";}
+else {die "diffusion not processed";}
+
+check_mkdir("temp_diffu_aligned", 02770, "brain");
+
+chdir "temp_diffu_aligned";
+
+system "$align_image ${directory}/${diffu}/${tnumber}_t2di.int2 ${directory}/images/${tnumber}_t1c_${tnumber}_fl.align ${tnumber}_fl_${tnumber}_t2di ${tnumber}_t2dia";
+
+system "$align ../${diffu}/${tnumber}_adc.idf ../images/${tnumber}_fla.idf -rigid -dofout ${tnumber}_adc_rigid.dof";
+
+system "$apply_trans ../${diffu}/${tnumber}_adc.idf ${tnumber}_adc_rigid.idf -dofin ${tnumber}_adc_rigid.dof";
+
+
+#############--------------------USAGE---------------------##############
+
+sub usage {
+
+  print <<"EOF";
+
+Program to align rigid difussion maps
+
+align_diffu_rigid t_number 
+ 
+     t_number:  the t number of the exam   
+     diffusion_directory_name the name: of the diffusion directory that contains the diffusion maps       
+
+E.g.: align_diffu_rigid t1234 
+
+EOF
+
+  exit 1;
+}

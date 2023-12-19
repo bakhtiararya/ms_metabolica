@@ -1,0 +1,210 @@
+#!/bin/csh -f
+
+if (${#argv} < 1) then
+  echo                      
+  echo "Usage: align_DTI t# anatomical_root [t threshold] "
+  echo
+  echo "Example: align_DTI t1234 fla"
+  echo "Example: align_DTI t1234 fsea t 0.2      "
+  echo
+  echo "   Aligns fsea/fla/t1ca (in order of best option)   " 
+  echo "   If t is included the following value will be     "
+  echo "   used as the threshold for extract_brain.x        "
+  echo
+  echo "   NOTE: If fsea is chosen then a 0.2 default       "
+  echo "         threshold for extract_brain.x will be      "
+  echo "         added.                                     "
+  echo
+  echo "   NOTE: Major difference from align_diffu.x:       "
+  echo "         it calls align_tool.x with DOF=6,cost=corr "
+  echo "         which is more efficient and stable	    " 	
+  echo "         					    "
+  echo  
+  echo "** Run this program inside the diffusion directory**"
+  echo
+  exit
+endif
+
+set resample = 1
+set extract_brain_threshold = "" 
+set tnum = $1
+set align_mod = $2
+
+
+### set up diffu_root ###
+set bval = `ls ${tnum}*_adc.idf | cut -d'_' -f2`
+if ($bval != 'adc') then
+	set diffu_root = ${tnum}_$bval
+else
+	set diffu_root = ${tnum}
+endif
+foreach f (`seq 1 1 ${#argv}`) 
+    if( $argv[$f] == 't' ) then
+        @ index = $f + 1
+        if( $index <= ${#argv} ) then
+            set extract_brain_threshold = $argv[$index] 
+        endif
+    endif
+end  
+
+set log = align_DTI.log
+echo "align_DTI $*"  >> $log 
+
+
+#### set up reference images in diffusion, if fla/fsea => t2di, if t1va/t1ca => fa
+set align_anat = ${tnum}_${align_mod}
+if ($align_mod == 'fla' || $align_mod == 'fsea') then
+	set align_diffu = ${diffu_root}_t2di
+else
+	set align_diffu = ${diffu_root}_fa
+endif
+set transform = ${align_diffu}_to_${align_anat}_brain_transform
+
+
+cp ../images/${align_anat}.* .
+echo "cp ../images/${align_anat}.* . " >> $log
+
+
+### Set if aligning or resampling
+
+echo "Diffusion (root = $diffu_root) will be aligned to ${align_anat} via $align_diffu" >> $log
+echo "Diffusion (root = $diffu_root) will be aligned to ${align_anat} via $align_diffu"
+
+
+### Gunzip to ensure no images are zipped
+gunzip *.gz -f
+
+### Brain extraction
+#set fl = ${tnum}_${align_mod}_brain.idf
+if (${align_mod} == 'fsea' && $extract_brain_threshold == "" ) then
+	set extract_brain_threshold = 0.3
+endif
+echo "extract_brain.x $align_anat ${align_anat}_brain $extract_brain_threshold" >> $log
+extract_brain.x ${align_anat} ${align_anat}_brain $extract_brain_threshold 
+
+if($status != 0) then
+	echo "************************************"
+        echo "ERROR! While executing:"
+        echo "extract_brain.x $align_anat ${align_anat}_brain"
+        echo "************************************"
+        exit(1)
+endif
+
+
+
+### Set the variables 
+set adc = {$diffu_root}_adc.idf
+set fa = {$diffu_root}_fa.idf
+set ev1 = {$diffu_root}_ev1.idf
+set ev2 = {$diffu_root}_ev2.idf
+set ev3 = {$diffu_root}_ev3.idf
+set t2di = {$diffu_root}_t2di.idf
+
+
+set adca = {$diffu_root}_adca.idf
+set faa = {$diffu_root}_faa.idf
+set t2dia = {$diffu_root}_t2dia.idf
+set ev1a = {$diffu_root}_ev1a.idf
+set ev2a = {$diffu_root}_ev2a.idf
+set ev3a = {$diffu_root}_ev3a.idf
+
+
+   ### Aligning diffusion images to the anatomical images 
+   echo Aligning diffusion images to the anatomical images... 
+
+   # if (!(-e ${transform})) then
+		echo "align_tool $align_diffu ${align_anat}_brain ${align_diffu}a" >> $log
+		align_tool $align_diffu ${align_anat}_brain ${align_diffu}a
+        if($status != 0) then
+	    echo "************************************"
+	    echo "ERROR! While executing:"
+	    echo "align_tool ${t2di:r} ${align_anat}_brain ${t2dia:r}"
+	    echo "************************************"
+	    exit(1)
+	endif
+   # endif
+    
+    ### Applying the transformation to diffusion images
+    echo Applying the transformation to diffusion images
+
+    if (-e ${t2di}) then
+		echo "align_tool ${t2di:r} ${align_anat}_brain ${t2dia:r} -t ${transform}" >> $log
+		align_tool ${t2di:r} ${align_anat}_brain ${t2dia:r} -t ${transform}
+	    if($status != 0) then
+		echo "************************************"
+		echo "ERROR! While executing:"
+		echo "align_tool ${t2di:r} ${align_anat}_brain ${t2dia:r} -t ${transform}"
+		echo "************************************"
+		exit(1)
+        endif
+    endif 
+
+
+
+    if (-e ${adc}) then
+		echo "align_tool ${adc:r} ${align_anat}_brain ${adca:r} -t ${transform}" >> $log
+		align_tool ${adc:r} ${align_anat}_brain ${adca:r} -t ${transform}
+	    if($status != 0) then
+		echo "************************************"
+		echo "ERROR! While executing:"
+		echo "align_tool ${adc:r} ${align_anat}_brain ${adca:r} -t ${transform}"
+		echo "************************************"
+		exit(1)
+        endif
+    endif 
+
+    if (-e ${fa}) then
+		echo "align_tool ${fa:r} ${align_anat}_brain ${faa:r} -t ${transform}" >> $log
+		align_tool ${fa:r} ${align_anat}_brain ${faa:r} -t ${transform}
+	    if($status != 0) then
+		echo "************************************"
+		echo "ERROR! While executing:"
+		echo "align_tool ${fa:r} ${align_anat}_brain ${faa:r} -t ${transform}"
+		echo "************************************"
+		exit(1)
+        endif
+    endif 
+
+    if (-e ${ev1}) then
+		echo "align_tool ${ev1:r} ${align_anat}_brain ${ev1a:r} -t ${transform}" >> $log
+		align_tool ${ev1:r} ${align_anat}_brain ${ev1a:r} -t ${transform}
+	    if($status != 0) then
+		echo "************************************"
+		echo "ERROR! While executing:"
+		echo "align_tool ${ev1:r} ${align_anat}_brain ${ev1a:r} -t ${transform}"
+		echo "************************************"
+		exit(1)
+        endif
+    endif 
+
+    if (-e ${ev2}) then
+		echo "align_tool ${ev2:r} ${align_anat}_brain ${ev2a:r} -t ${transform}" >> $log
+		align_tool ${ev2:r} ${align_anat}_brain ${ev2a:r} -t ${transform}
+	    if($status != 0) then
+		echo "************************************"
+		echo "ERROR! While executing:"
+		echo "align_tool ${ev2:r} ${align_anat}_brain ${ev2a:r} -t ${transform}"
+		echo "************************************"
+		exit(1)
+        endif
+    endif 
+
+    if (-e ${ev3}) then
+		echo "align_tool ${ev3:r} ${align_anat}_brain ${ev3a:r} -t ${transform}" >> $log
+		align_tool ${ev3:r} ${align_anat}_brain ${ev3a:r} -t ${transform}
+	    if($status != 0) then
+		echo "************************************"
+		echo "ERROR! While executing:"
+		echo "align_tool ${ev3:r} ${align_anat}_brain ${ev3a:r} -t ${transform}"
+		echo "************************************"
+		exit(1)
+        endif
+    endif 
+
+### Remove any vtk output or error messages
+#rm *mask*     
+#echo "rm *mask* files" >> $log
+echo "Processing complete. " >> $log
+echo "Processing complete. "
+echo "     " >> $log
+

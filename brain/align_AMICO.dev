@@ -1,0 +1,130 @@
+#!/bin/tcsh
+
+
+# check number of arguments
+
+if ( $#argv  < 1 ) then
+   echo
+   echo "--"
+   echo "USAGE: align_AMICO rootname"
+   echo
+   echo "align 3T AMICO to anat through S0"
+   echo "if fsea exists then use fsea, otherwise use fla"
+   echo
+   echo "Created on 09/30/2015 by Prasanna Parvathaneni"
+   echo
+   echo
+else
+
+set tnum = $1
+if (-e ../images/${tnum}_fsea.idf) then
+	echo fsea exist, use fsea
+	set anat = {$tnum}_fsea.nii.gz
+	set anat_brain = {$tnum}_fsea_brain.nii.gz
+	set bet_th = 0.2
+else
+	echo use fla
+	set anat = {$tnum}_fla.nii.gz
+	set anat_brain = {$tnum}_fla_brain.nii.gz
+	set bet_th = 0.5
+endif
+#nifti_file_convert --input {$tnum}_DTI_S0r.idf --output_root {$tnum}_DTI_S0r
+set t2di = {$tnum}_DTI_S0.nii.gz
+set t2dia = {$tnum}_DTI_S0a.nii.gz
+set adc = {$tnum}_DTI_MD.nii.gz
+set adca = {$tnum}_DTI_MDa.nii.gz
+set fa = {$tnum}_DTI_FA.nii.gz
+set faa = {$tnum}_DTI_FAa.nii.gz
+
+cp ../AMICO/NODDI/FIT_*.nii ./
+
+set odi = FIT_OD.nii
+set odia = {$tnum}_AMICO_odia.nii.gz
+set ficvf = FIT_ICVF.nii
+set ficvfa = {$tnum}_AMICO_ficvfa.nii.gz
+set fiso = FIT_ISOVF.nii
+set fisoa = {$tnum}_AMICO_fisoa.nii.gz
+
+set transform = ${t2di:r:r}_to_${anat_brain:r:r}_transform
+
+cp ../images/{$anat:r:r}.* ./
+
+### convert anat to nifti and bet ###
+echo converting ${anat} and bet...
+nifti_file_convert --input {$anat:r:r}.idf --output_root ${anat:r:r} 
+bet $anat ${anat_brain:r:r} -f $bet_th -m
+
+### align t2di to anat ###
+if (! -e $transform) then
+	echo aligning t2di to ${anat}...
+	echo flirt -in $t2di -ref $anat_brain -out ${t2dia:r:r} -dof 6 -omat ${transform}
+	flirt -in $t2di -ref $anat_brain -out ${t2dia:r:r} -dof 6 -omat ${transform}
+endif
+
+echo @@@ applying transform to odi... 
+### correct NODDI header ###
+fslcpgeom ${t2di:r:r} ${odi:r:r}
+### apply transform to NODDI ###
+flirt -in ${odi:r:r} -init ${transform} -ref ${anat_brain} -out ${odia:r:r} -applyxfm -interp nearestneighbour
+### scale up by 1000 ###
+fslmaths ${odia:r:r} -mul 1000 -thr 0 ${odia:r:r}_tmp_scale
+### flip dim and convert to volume ###
+#fslswapdim ${odia:r:r}_tmp_scale x -y -z ${odia:r:r}_tmp_scale_flip
+nifti_file_convert --input ${odia:r:r}_tmp_scale.nii.gz --output_root ${odia:r:r}  --swap_dims
+
+
+echo @@@ applying transform to ficvf... 
+### correct NODDI header ###
+fslcpgeom ${t2di:r:r} ${ficvf:r:r}
+### apply transform to NODDI ###
+flirt -in ${ficvf:r:r} -init ${transform} -ref ${anat_brain} -out ${ficvfa:r:r} -applyxfm -interp nearestneighbour
+### scale up by 1000 ###
+fslmaths ${ficvfa:r:r} -mul 1000 -thr 0 ${ficvfa:r:r}_tmp_scale
+### flip dim and convert to volume ###
+#fslswapdim ${ficvfa:r:r}_tmp_scale x -y -z ${ficvfa:r:r}_tmp_scale_flip
+nifti_file_convert --input ${ficvfa:r:r}_tmp_scale.nii.gz --output_root ${ficvfa:r:r} --swap_dims
+
+
+echo @@@ applying transform to fiso... 
+### correct NODDI header ###
+fslcpgeom ${t2di:r:r} ${fiso:r:r}
+### apply transform to NODDI ###
+flirt -in ${fiso:r:r} -init ${transform} -ref ${anat_brain} -out ${fisoa:r:r} -applyxfm -interp nearestneighbour
+### scale up by 1000 ###
+fslmaths ${fisoa:r:r} -mul 1000 -thr 0 ${fisoa:r:r}_tmp_scale
+### flip dim and convert to volume ###
+#fslswapdim ${fisoa:r:r}_tmp_scale x -y -z ${fisoa:r:r}_tmp_scale_flip
+nifti_file_convert --input ${fisoa:r:r}_tmp_scale.nii.gz --output_root ${fisoa:r:r} --swap_dims
+
+echo @@@ applying transform to adc... 
+### correct NODDI header ###
+fslcpgeom ${t2di:r:r} ${adc:r:r}
+### apply transform to NODDI ###
+flirt -in ${adc:r:r} -init ${transform} -ref ${anat_brain} -out ${adca:r:r} -applyxfm -interp nearestneighbour
+### scale up by 1000 ###
+fslmaths ${adca:r:r} -mul 1000000 -thr 0 ${adca:r:r}_tmp_scale
+### flip dim and convert to volume ###
+#fslswapdim ${adca:r:r}_tmp_scale x -y -z ${adca:r:r}_tmp_scale_flip
+nifti_file_convert --input ${adca:r:r}_tmp_scale.nii.gz --output_root ${adca:r:r} --swap_dims
+
+echo @@@ applying transform to fa... 
+### correct NODDI header ###
+fslcpgeom ${t2di:r:r} ${fa:r:r}
+### apply transform to NODDI ###
+flirt -in ${fa:r:r} -init ${transform} -ref ${anat_brain} -out ${faa:r:r} -applyxfm -interp nearestneighbour
+### scale up by 1000 ###
+fslmaths ${faa:r:r} -mul 1000 -thr 0 ${faa:r:r}_tmp_scale
+### flip dim and convert to volume ###
+#fslswapdim ${faa:r:r}_tmp_scale x -y -z ${faa:r:r}_tmp_scale_flip
+nifti_file_convert --input ${faa:r:r}_tmp_scale.nii.gz --output_root ${faa:r:r} --swap_dims
+
+echo @@@ convert t2di... 
+### flip dim and convert to volume ###
+nifti_file_convert --input ${t2dia:r:r}.nii.gz --output_root ${t2dia:r:r} --swap_dims
+
+rm -r tmp_files
+rm *tmp*
+
+echo Done aligning AMICO to anat!
+endif
+

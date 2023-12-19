@@ -1,0 +1,480 @@
+#!/usr/bin/perl -w
+
+#   $URL: https://intrarad.ucsf.edu/svn/rad_software/surbeck/brain/DB/nelson_ncvi/trunk/data_upload_qr_scripts/upload_hrmas_results $
+#   $Rev: 36067 $
+#   $Author: jasonc@RADIOLOGY.UCSF.EDU $
+#   $Date: 2015-09-18 10:41:33 -0700 (Fri, 18 Sep 2015) $
+#
+#   Specialized data upload script to upload HRMAS data from spreadsheet to DB
+#
+
+use strict;
+use DBI;
+use DBD::Pg;
+use Getopt::Long;
+Getopt::Long::config("bundling");
+use Pod::Usage;
+use File::Spec;
+use Cwd;
+use Cwd 'abs_path';
+require SET_BRAIN_MODULES;
+use Spreadsheet::ParseExcel;
+
+
+my $script    = $0;
+
+our $xl_row; 
+
+
+##########################
+# read in arguments
+##########################
+
+GetOptions(
+    "xl=s"       => \my $spreadsheet_name,
+    "ps=s"       => \my $presat_worksheet,
+    "cp=s"       => \my $cpmg_worksheet,
+    "D"          => \my $debug, 
+    "v"          => \my $verbose
+) or pod2usage(-verbose=>2, -exitval=>2);
+
+if (!defined $spreadsheet_name ) {
+    pod2usage(-verbose=>2, -exitval=>2);
+}
+
+
+##########################
+#   Connect to DB:
+##########################
+BRAIN_DB::brain_db_set_env( $script );
+my $dbh = BRAIN_DB::brain_db_get_connection();
+
+
+my $parser   = Spreadsheet::ParseExcel->new();
+
+my $fname = $spreadsheet_name; 
+print "$fname\n";
+my $workbook = $parser->parse($fname);
+
+if ( !defined $workbook ) {
+    die $parser->error(), ".\n";
+}
+
+my $presat_worksheet_name = "PRESAT"; 
+my $cpmg_worksheet_name   = "CPMG"; 
+if (defined $presat_worksheet  ) {
+    $presat_worksheet_name = "$presat_worksheet"; 
+}
+if (defined $cpmg_worksheet  ) {
+    $cpmg_worksheet_name = "$cpmg_worksheet"; 
+}
+
+for my $worksheet ( $workbook->worksheets() ) {
+
+    my $worksheet_name = $worksheet->get_name(); 
+
+    print "\n\n########################\n";
+    print "WORKSHEET_NAME: $worksheet_name \n";
+    print "########################\n\n\n";
+
+    my $sequence; 
+    if ($worksheet_name eq "$presat_worksheet_name" ) {
+        $sequence = "PRESAT"; 
+    } elsif ($worksheet_name eq "$cpmg_worksheet_name" ) {
+        $sequence = "CPMG"; 
+    } else {
+        next;
+    }
+
+        
+    my ( $row_min, $row_max ) = $worksheet->row_range();
+    my ( $col_min, $col_max ) = $worksheet->col_range();
+
+    for $xl_row ( $row_min .. $row_max ) {
+
+        #  reset for each row: 
+        my ($cho, $pc, $gpc, $eth, $pe, $gsh, $tau, $h_tau, $naa);
+        my ($asp, $glu, $gln, $glc, $mi, $si);
+        my ($gaba, $cre, $lac, $ala, $gly, $val, $thr, $ace, $two_hg, $bet, $suc);
+
+        if ( defined $debug ) {
+            print "\n\n"; 
+            print "==========================================\n"; 
+            print "Next row = $xl_row \n";
+            print "\n"; 
+        }
+
+        my ($sf_num, $vial_num, $spectroscopist);
+        my ($scan_date, $rotor, $tsp_wt, $sample_wt, $cal);
+        $sf_num = ""; 
+
+        #   b#, vial#
+        my $cell_sf_num         = $worksheet->get_cell( $xl_row, 1 );
+        my $cell_vial_num       = $worksheet->get_cell( $xl_row, 2 );
+        my $cell_cho            = $worksheet->get_cell( $xl_row, 7 );
+        my $cell_pc             = $worksheet->get_cell( $xl_row, 8 );
+        my $cell_gpc            = $worksheet->get_cell( $xl_row, 9 );
+        my $cell_eth            = $worksheet->get_cell( $xl_row, 10 );
+        my $cell_pe             = $worksheet->get_cell( $xl_row, 11 );
+        my $cell_gsh            = $worksheet->get_cell( $xl_row, 12 );
+        my $cell_tau            = $worksheet->get_cell( $xl_row, 13 );
+        my $cell_h_tau          = $worksheet->get_cell( $xl_row, 14 );
+        my $cell_naa            = $worksheet->get_cell( $xl_row, 15 );
+        my $cell_asp            = $worksheet->get_cell( $xl_row, 16 );
+        my $cell_glu            = $worksheet->get_cell( $xl_row, 17 );
+        my $cell_gln            = $worksheet->get_cell( $xl_row, 18 );
+        my $cell_glc            = $worksheet->get_cell( $xl_row, 19 );
+        my $cell_mi             = $worksheet->get_cell( $xl_row, 20 );
+        my $cell_si             = $worksheet->get_cell( $xl_row, 21 );
+        my $cell_gaba           = $worksheet->get_cell( $xl_row, 22 );
+        my $cell_cre            = $worksheet->get_cell( $xl_row, 23 );
+        my $cell_lac            = $worksheet->get_cell( $xl_row, 24 );
+        my $cell_ala            = $worksheet->get_cell( $xl_row, 25 );
+        my $cell_gly            = $worksheet->get_cell( $xl_row, 26 );
+        my $cell_val            = $worksheet->get_cell( $xl_row, 27 );
+        my $cell_thr            = $worksheet->get_cell( $xl_row, 28 );
+        my $cell_ace            = $worksheet->get_cell( $xl_row, 29 );
+        my $cell_2hg            = $worksheet->get_cell( $xl_row, 30 );
+        my $cell_bet            = $worksheet->get_cell( $xl_row, 31 );
+        my $cell_suc            = $worksheet->get_cell( $xl_row, 32 );
+        
+        if (defined $cell_sf_num) {
+            $sf_num = $cell_sf_num->value(); 
+            if ( $sf_num =~ m/(\d+)*/ ) {
+                $sf_num  = $1; 
+            } else {
+                next; 
+            }
+        } else { next; };
+
+        #   vial number
+        if (defined $cell_vial_num) {
+            $vial_num  = $cell_vial_num->value(); 
+            if ( $vial_num =~ m/(\S+)\b.*/ ) {
+                $vial_num  = $1; 
+            } else {
+                next; 
+            }
+        } else { next; };
+
+        #   parse each column and check for NAN.  All values should be decimal otherwise set to null in DB
+        if ( defined $cell_cho ) {
+            $cho = $cell_cho->value(); 
+            if ( $cho !~ m/[\d\.]+/ ) {
+                $cho = ''; 
+            }
+        } 
+
+        if ( defined $cell_pc ) {
+            $pc = $cell_pc->value(); 
+            if ( $pc !~ m/[\d\.]+/ ) {
+                $pc = ''; 
+            }
+        }
+
+        if ( defined $cell_gpc ) {
+            $gpc = $cell_gpc->value(); 
+            if ( $gpc !~ m/[\d\.]+/ ) {
+                $gpc = ''; 
+            }
+        } 
+
+        if ( defined $cell_eth ) {
+            $eth = $cell_eth->value(); 
+            if ( $eth !~ m/[\d\.]+/ ) {
+                $eth = ''; 
+            }
+        } 
+
+        if ( defined $cell_pe ) {
+            $pe = $cell_pe->value(); 
+            if ( $pe !~ m/[\d\.]+/ ) {
+                $pe = ''; 
+            }
+        } 
+
+        if ( defined $cell_gsh ) {
+            $gsh = $cell_gsh->value(); 
+            if ( $gsh !~ m/[\d\.]+/ ) {
+                $gsh = ''; 
+            }
+        } 
+
+        if ( defined $cell_tau ) {
+            $tau = $cell_tau->value(); 
+            if ( $tau !~ m/[\d\.]+/ ) {
+                $tau = ''; 
+            }
+        } 
+
+        if ( defined $cell_h_tau ) {
+            $h_tau = $cell_h_tau->value(); 
+            if ( $h_tau !~ m/[\d\.]+/ ) {
+                $h_tau = ''; 
+            }
+        } 
+
+        if ( defined $cell_naa ) {
+            $naa= $cell_naa->value(); 
+            if ( $naa !~ m/[\d\.]+/ ) {
+                $naa = ''; 
+            }
+        } 
+
+        if ( defined $cell_asp ) {
+            $asp = $cell_asp->value(); 
+            if ( $asp !~ m/[\d\.]+/ ) {
+                $asp = ''; 
+            } 
+        } 
+
+        if ( defined $cell_glu ) {
+            $glu = $cell_glu->value(); 
+            if ( $glu !~ m/[\d\.]+/ ) {
+                $glu = ''; 
+            } 
+        } 
+
+        if ( defined $cell_gln ) {
+            $gln = $cell_gln->value(); 
+            if ( $gln !~ m/[\d\.]+/ ) {
+                $gln = ''; 
+            } 
+        } 
+
+        if ( defined $cell_glc ) {
+            $glc = $cell_glc->value(); 
+            if ( $glc !~ m/[\d\.]+/ ) {
+                $glc = ''; 
+            } 
+        } 
+
+        if ( defined $cell_mi ) {
+            $mi = $cell_mi->value(); 
+            if ( $mi !~ m/[\d\.]+/ ) {
+                $mi = ''; 
+            } 
+        } 
+
+        if ( defined $cell_si ) {
+            $si = $cell_si->value(); 
+            if ( $si !~ m/[\d\.]+/ ) {
+                $si = ''; 
+            } 
+        } 
+
+        if ( defined $cell_gaba ) {
+            $gaba = $cell_gaba->value(); 
+            if ( $gaba !~ m/[\d\.]+/ ) {
+                $gaba = ''; 
+            } 
+        } 
+
+        if ( defined $cell_cre ) {
+            $cre = $cell_cre->value(); 
+            if ( $cre !~ m/[\d\.]+/ ) {
+                $cre = ''; 
+            } 
+        } 
+
+        if ( defined $cell_lac ) {
+            $lac = $cell_lac->value(); 
+            if ( $lac !~ m/[\d\.]+/ ) {
+                $lac = ''; 
+            } 
+        } 
+
+        if ( defined $cell_ala ) {
+            $ala = $cell_ala->value(); 
+            if ( $ala !~ m/[\d\.]+/ ) {
+                $ala = ''; 
+            } 
+        } 
+
+        if ( defined $cell_gly ) {
+            $gly = $cell_gly->value(); 
+            if ( $gly !~ m/[\d\.]+/ ) {
+                $gly = ''; 
+            } 
+        } 
+
+        if ( defined $cell_val ) {
+            $val = $cell_val->value(); 
+            if ( $val !~ m/[\d\.]+/ ) {
+                $val = ''; 
+            } 
+        } 
+
+        if ( defined $cell_thr ) {
+            $thr = $cell_thr->value(); 
+            if ( $thr !~ m/[\d\.]+/ ) {
+                $thr = ''; 
+            } 
+        } 
+
+        if ( defined $cell_ace ) {
+            $ace = $cell_ace->value(); 
+            if ( $ace !~ m/[\d\.]+/ ) {
+                $ace = ''; 
+            } 
+        } 
+
+        if ( defined $cell_2hg ) {
+            $two_hg = $cell_2hg->value(); 
+            if ( $two_hg !~ m/[\d\.]+/ ) {
+                $two_hg = ''; 
+            } 
+        } 
+
+        if ( defined $cell_bet ) {
+            $bet = $cell_bet->value(); 
+            if ( $bet !~ m/[\d\.]+/ ) {
+                $bet = ''; 
+            } 
+        } 
+
+        if ( defined $cell_suc ) {
+            $suc = $cell_suc->value(); 
+            if ( $suc !~ m/[\d\.]+/ ) {
+                $suc = ''; 
+            } 
+        } 
+        
+
+        if (defined $debug) {
+            print "VNUM: $vial_num\n";
+        }
+
+        if ( $vial_num ne "" && $sf_num ne "" ) {
+                
+            my $insert_hrmas_script = "/home/jasonc/svn/surbeck/brain/DB/nelson_ncvi/trunk/data_upload_qr_scripts/insert_hrmas_result";
+
+            if ( $script =~ m/\.dev$/ ) { 
+                $insert_hrmas_script .= ".dev";
+            }    
+            my $cmd = "$insert_hrmas_script";
+            $cmd .= " --sf_num $sf_num"; 
+            $cmd .= " --vial_num $vial_num"; 
+            $cmd .= " --sequence $sequence"; 
+
+            if ( length($cho)>0 ) {
+                $cmd .= " --cho $cho";  
+            }
+            if ( length($pc)>0 ) {
+                $cmd .= " --pc $pc";  
+            }
+            if ( length($gpc)>0 ) {
+                $cmd .= " --gpc $gpc";  
+            }
+            if ( length($eth)>0 ) {
+                $cmd .= " --eth $eth";  
+            }
+            if ( length($pe)>0 ) {
+                $cmd .= " --pe $pe";  
+            }
+            if ( length($gsh)>0 ) {
+                $cmd .= " --gsh $gsh";  
+            }
+            if ( length($tau)>0 ) {
+                $cmd .= " --tau $tau";  
+            }
+            if ( length($h_tau)>0 ) {
+                $cmd .= " --h_tau $h_tau";  
+            }
+            if ( length($naa)>0 ) {
+                $cmd .= " --naa $naa";  
+            }
+            if ( length($asp)>0 ) {
+                $cmd .= " --asp $asp";  
+            }
+            if ( length($glu)>0 ) {
+                $cmd .= " --glu $glu";  
+            }
+            if ( length($gln)>0 ) {
+                $cmd .= " --gln $gln";  
+            }
+            if ( length($glc)>0 ) {
+                $cmd .= " --glc $glc";  
+            }
+            if ( length($mi)>0 ) {
+                $cmd .= " --mi $mi";  
+            }
+            if ( length($si)>0 ) {
+                $cmd .= " --si $si";  
+            }
+            if ( length($gaba)>0 ) {
+                $cmd .= " --gaba $gaba";  
+            }
+            if ( length($cre)>0 ) {
+                $cmd .= " --cre $cre";  
+            }
+            if ( length($lac)>0 ) {
+                $cmd .= " --lac $lac";  
+            }
+            if ( length($ala)>0 ) {
+                $cmd .= " --ala $ala";  
+            }
+            if ( length($gly)>0 ) {
+                $cmd .= " --gly $gly";  
+            }
+            if ( length($val)>0 ) {
+                $cmd .= " --val $val";  
+            }
+            if ( length($thr)>0 ) {
+                $cmd .= " --thr $thr";  
+            }
+            if ( length($ace)>0 ) {
+                $cmd .= " --ace $ace";  
+            }
+            if ( length($two_hg)>0 ) {
+                $cmd .= " --two_hg $two_hg";  
+            }
+            if ( length($bet)>0 ) {
+                $cmd .= " --bet $bet";  
+            }
+            if ( length($suc)>0 ) {
+                $cmd .= " --suc $suc";  
+            }
+
+            print "$cmd\n";
+            if ( !defined $verbose ) {
+                if ( system($cmd) ) {
+                    print "##########################\n";
+                    print "ERROR: failed running $cmd\n";
+                    print "##########################\n";
+                }
+            }
+        } else {
+            print "ERROR(invalid args): Can not determine input args for HRMAS insertion(b, v#): $vial_num\n";
+        } 
+    }
+        
+}
+
+################################################################
+#   Subroutines
+################################################################
+
+
+###############################################################################
+#
+#   POD Usage docs
+#
+###############################################################################
+
+=head1 NAME
+
+    upload_hrmas_results
+
+=head1 SYNOPSIS
+
+    upload_hrmas_results --xl spreadsheet_name --ps name --cp name [ -vD ]
+
+        --xl    spreadsheet_name    hrmas to spreadsheet to upload. 
+        --ps    name                presat worksheet
+        --cp    name                CPMG worksheet
+        -v                          only print upload commands, but do not execute
+        -D                          Print debugging messages.
+
+=cut
+

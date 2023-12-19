@@ -1,0 +1,27 @@
+#!/bin/tcsh 
+
+setenv LD_LIBRARY_PATH /netopt/bin/local/brain/vtkCISG/lib:/data/camelot/mclee/VTK-4.0_sol2/bin:/opt/local/lib
+
+if (${#argv} == 0) then
+  /netopt/bin/local/brain/vtkCISG/vtktransformation  
+  exit;
+endif
+
+set source_file = $1
+set output_file = $2
+
+set output_base = `basename ${output_file}`
+
+set temp_file = /tmp/${output_base}_$$
+
+/netopt/bin/local/brain/vtkCISG/vtktransformation $*
+
+# Everything above "filetype" is suspect, ie. the first 10 lines
+# should be copied from the original image idf.
+
+head -10 ${source_file} >! ${temp_file}
+tail -17 ${output_file} >> ${temp_file}
+
+mv -f ${temp_file} ${output_file}
+
+fix_rootname.x $output_file:r

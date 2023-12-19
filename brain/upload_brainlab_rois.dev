@@ -1,0 +1,358 @@
+#!/usr/bin/perl 
+#
+#   $URL: https://intrarad.ucsf.edu/svn/rad_software/surbeck/brain/DB/nelson_ncvi/trunk/image_archive_scripts/upload_brainlab_rois $
+#   $Rev: 38603 $
+#   $Author: jasonc@RADIOLOGY.UCSF.EDU $
+#   $Date: 2016-07-13 15:21:27 -0700 (Wed, 13 Jul 2016) $
+#
+#   Script to upload brainlab ROIs that have been downloaded from the gateway to the brain PACS:
+#    1.  get seriesdescriptions for reference images (i.e. Series Descriptoin != Object)
+#    2.  make sure there is only 1 series description (all objects on same reference image)
+#    3.  look up the seriesuid for that series description from dcm_exam_info (should only be 1 match)
+#    4.  reidentify the exam Segmentation Objets
+#    5.  insert "Referenced Series Instance UID into the referenced series sequence of the Segmentation Objects
+#    6.  put the "Segment Label" into the series description:     
+#            (0062,0005) LO [T2ALL]                                  #   6, 1 SegmentLabel
+#    7.  upload identified segmentation objects to braino PACS
+
+
+require SET_PACS_MODULES;
+use Pod::Usage;
+use Getopt::Long;
+Getopt::Long::config("bundling");
+use File::Spec;
+use strict; 
+
+
+#################
+#   Get user run-time options 
+#   and validate them
+#################
+my $db_instance     = BRAIN_DB_UTILS::dbutils_get_db_instance();
+my $domain          = $nelson_ncvi_conf::domain{$db_instance};
+my @podSections;
+@podSections = ("NAME", "SYNOPSIS", "DESCRIPTION", "EXAMPLES" );
+
+GetOptions(
+    "p=s"   => \my $pswd,
+    "e=s"   => \my $examDir, 
+    "D"     => \my $debug,
+    "h"     => \my $help
+) or pod2usage(-verbose=>99, -exitval=>2, -sections => [ @podSections ] );
+
+
+if (defined $help ) {
+    pod2usage(-verbose=>99, -exitval=>0, -sections => [ @podSections ] );
+}
+
+if ( defined $debug ) {
+    DCM4CHEE::dcm4chee_debug_on();
+}
+
+if ( !defined $examDir ) {
+    pod2usage(-verbose=>99, -exitval=>0, -sections => [ @podSections ] );
+} else {
+    $examDir = File::Spec->rel2abs($examDir);
+}
+
+if ( defined $pswd ) {
+    DCM4CHEE::dcm4chee_set_pswd($pswd);
+} else {
+    DCM4CHEE::dcm4chee_prompt_pswd();
+}
+
+
+
+my $LOGFILE = "upload_brainlab_roi.log"; 
+
+#   Get the reference series description.   This should be a single unique descripton: 
+#   get series descriptions that are NOT "Object".  Object is the default description for the brain lab 
+#   segmentation objects. 
+chdir ("$examDir"); 
+#my $cmd = "find \. \-name \'\*I1\.\*\' \| xargs dcmdump \| grep \-i seriesdescription \| grep \-v \-i object \| sort \-u"; 
+#my @seriesDescriptions = `$cmd`; 
+#if ( $debug ) {
+    #print `pwd`."\n"; 
+    #print "$cmd\n"; 
+    #print "SD: @seriesDescriptions\n"; 
+#}
+#if ( @seriesDescriptions != 1 ) {
+    #print "ERROR: more than one reference series description found\n"; 
+    #print "@seriesDescriptions\n"; 
+    #exit(1); 
+#}
+
+my $refSeriesDescription;
+#my $refSeriesDescription = $seriesDescriptions[0]; 
+#$refSeriesDescription =~ s/.*\[(.*)\].*/$1/; 
+#chomp $refSeriesDescription; 
+#print "REF: $refSeriesDescription\n"; 
+
+
+#
+#   Get the private accession number: 
+#
+my $getAccCmd = "find \. \-name \'\*I1\.\*\' \| xargs dcmdump \+P 0008,0050 \| tr -s '\n' \|sort \-u"; 
+my @accList = `$getAccCmd`; 
+if ( @accList != 1 ) {
+    print "ERROR: more than one accession number found\n"; 
+    print "@accList\n"; 
+    exit(1); 
+}
+my $accessionNumber = $accList[0]; 
+if ( $accessionNumber =~ m/.*\[t*(\d{4,5})\].*/ ) {
+    $accessionNumber = $1; 
+} else {
+    print "ERROR: could not find t-number accession number, will not be able to reidentify.\n"; 
+    print "$accessionNumber\n";     
+    exit(1); 
+} 
+chomp $accessionNumber; 
+print "acc: $accessionNumber\n"; 
+
+
+#my $hiddenExamDir = "${examDir}/.E${accessionNumber}/"; 
+my $hiddenExamDir = "${examDir}/../PROD_E${accessionNumber}/"; 
+mkdir ("$hiddenExamDir"); 
+
+#   find the series containing segmentation objects and then reidentify them
+#my $getImagesCmd = "find \. \-name \'\*I1\.\*\' "; 
+#   Get exactly 1 DCM image from each series dir: 
+#   find . -type d -exec sh -c 'find "{}" -maxdepth 1 -type f | sort | head -n 1' ";"
+my $getImagesCmd = "find \. \-type d \-exec sh \-c \'find \"\{\}\"  \-maxdepth 1 \-type f \| sort \| head \-n 1\' \";\" ";
+my @imageList = `$getImagesCmd`; 
+my @segSeriesToGet; 
+my $segVolCount = 0; 
+print "LIST: \n@imageList\n"; 
+foreach my $f (@imageList) {
+    chomp $f; 
+
+    my $success = 0; 
+    my $sop = `dcmdump \-s \+P 0008,0016 $f `; 
+    print "SOP: $sop\n"; 
+    if ( $sop =~ m/SegmentationStorage/ ) {
+
+        print "\n"; 
+        print "=================================================================================\n"; 
+        print "SEGMENTATION OBJECT: $f\n"; 
+
+        #   put into separate directory (time stamp dir name)  for each seg object volume and 
+        #   get rid of extra characters after DCM extension: 
+        $segVolCount++;  
+        my $timeStamp = time; 
+        $timeStamp =~ s/.*(\d{7,7})/$1/; 
+        my $newSeriesNumber = "${segVolCount}${timeStamp}";
+        my $segObjDir = "./${newSeriesNumber}";  
+        mkdir ("${segObjDir}");    
+        my $newF = $f; 
+        $newF =~ s/.*\/(.*)/$1/; 
+        $newF =~ s/(.*DCM).*/$1/; 
+        my $cpSOCMD = "cp $f $segObjDir/${newF}"; 
+        system("$cpSOCMD"); 
+        $f = `ls ${segObjDir}/*.DCM*`; 
+        chomp $f; 
+        print "SEGMENTATION OBJECT MOVED: $f\n"; 
+        
+        #   get the object's reference series instance uid: 
+        my $getUIDCmd = "dcmdump +P 0008,1115 $f | grep -i seriesinstanceuid"; 
+        my $refSeriesInstanceUID = `$getUIDCmd`;  
+        if ( $refSeriesInstanceUID =~ m/\[(.*)\]/) { 
+            $refSeriesInstanceUID = $1;  
+            print "REF SERIES INSTANCE UID $refSeriesInstanceUID\n"; 
+        } else {
+            print "Could not get reference series UID\n"; 
+            exit(1); 
+        }
+
+
+        #   Now find the series this is from and get its series description, search non Segmentation objects: 
+        my $refSUID;  
+        foreach my $g (@imageList) {
+            my $sop2 = `dcmdump \+P 0008,0016 $g `; 
+            if ( $sop2 !~ m/SegmentationStorage/ ) {
+                my $getRefUIDCmd = "dcmdump +P 0020,000e $g"; 
+                my $UID = `$getRefUIDCmd`; 
+                my $getSOPCmd = "dcmdump +P 0008,0016 $g"; 
+                my $SOP= `$getSOPCmd`; 
+
+                if ( ($UID =~ m/$refSeriesInstanceUID/) && ($SOP =~ m/.*MRImageStorage.*/) ) {
+
+                    #   this is the one, get it's series description
+                    my $getRefSD = "dcmdump +P 0008,103e $g"; 
+                    my $refSD = `$getRefSD`; 
+
+                    #   And get the series number
+                    my $getSeriesNumCmd = "dcmdump +P 0020,0011 $g "; 
+                    my $refSeriesNumber= `$getSeriesNumCmd`;  
+                    if ( $refSeriesNumber =~ m/\[(.*)\]/) { 
+                        $refSeriesNumber = $1;  
+                        print "REF SERIES Number $refSeriesNumber \n"; 
+                    } else {
+                        print "Could not get reference series number\n"; 
+                        exit(1); 
+                    }
+
+                    if ( $refSD =~ m/\[(.*)\]/) { 
+                        $refSD = $1;  
+                        print "REF SERIES TO FIND(${accessionNumber}): $refSD\n";         
+                        print "REF SERIES Number TO FIND(${accessionNumber}): $refSeriesNumber\n";         
+
+                        #
+                        #   Get the referernce series series instance UID: 
+                        #
+                        my $getRefSUIDCmd = "dcm_exam_info \-u \-t $accessionNumber \| grep \-i \'$refSD\' \| grep \'\^$refSeriesNumber\' \| sort \-u"; 
+                        print "$getRefSUIDCmd\n"; 
+                        my @refSUIDList = `$getRefSUIDCmd`; 
+                        if ( @refSUIDList != 1 ) {
+                            print "===============================================\n"; 
+                            print "ERROR: the reference series name for the ROI must match exactly 1 series description\n"; 
+                            print "in the DB.  "; 
+                            print "This ROI has the following reference series description: $refSD\n"; 
+                            print "There are $#refSUIDList series in the DB matching this (use dcm_exam_info to check):\n\n"; 
+                            print "Reference Series Name: $refSD\n"; 
+                            print "$getRefSUIDCmd \n"; 
+                            print "----------------------------------\n"; 
+                            print "@refSUIDList\n\n"; 
+                            print "===============================================\n"; 
+                            exit(1); 
+                        }
+                        print "REF SERIES FOUND(${accessionNumber}):\n"; 
+                        print "\tSeries: $refSD\n";         
+                        $refSUID = $refSUIDList[0]; 
+                        $refSUID =~ s/\d+\s+(\S+)\s+.*/$1/; 
+                        chomp $refSUID; 
+                        print "\tref SUID: $refSUID\n\n"; 
+                        $success = 1; 
+                        last; 
+                    }
+                }
+            }
+        } 
+        if ( ! $success ) {
+            print "ERROR, could not find reference series ( for segmentation object $f\n";     
+            exit(1); 
+        }
+       
+        my $series = $f; 
+        $series =~ s/(.*)\/.*/$1/g; 
+        chomp $series; 
+
+        my $seriesNumber = $series; 
+        $seriesNumber =~ s/.*\/(\d+).*/$1/; 
+        push( @segSeriesToGet, $newSeriesNumber); 
+
+        my $cpCmd = "/usr/bin/cp -r $series ${hiddenExamDir}/"; 
+        if ( $debug ) {
+            print `pwd` . "\n"; 
+            print "$cpCmd\n"; 
+        }
+        if ( system("$cpCmd") ) {
+            print "ERROR: $cpCmd\n"; 
+            exit(1); 
+        } 
+
+        #   Get the segment label and use that as the new series description: 
+        my $newSeriesDescription = `dcmdump \+P 0062,0005 $f `; 
+        $newSeriesDescription =~ s/.*\[(.*)\].*/$1/; 
+
+        #   Now reidentify the exam
+        my $reidCmd = "reidentify_images --nb \-\-in_dir ${hiddenExamDir}/${series} -s $newSeriesDescription";  
+        print "$reidCmd\n"; 
+        if ( system( $reidCmd ) ) {
+            print "ERROR: $reidCmd\n"; 
+            exit(1); 
+        } 
+
+        #(0008,1115) SQ (Sequence with explicit length #=1)      # 17862, 1 ReferencedSeriesSequence
+        #   (0020,000e) UI [1.2.276.0.7230010.3.1.4.3665852783.15688.1429293322.382306] #  58, 1 SeriesInstanceUID
+        #   dcmodify -m "(0008,1115)[0].SeriesInstanceUID=$refSUID" Et9162S93I1.DCM
+        my $modCmd = "dcmodify -gin -gse -nb \-m \"\(0008,1115\)\[0\]\.SeriesInstanceUID=${refSUID}\" \-m \"0020,0011\=${newSeriesNumber}\"  ${hiddenExamDir}/${f}"; 
+        print "$modCmd\n";  
+        if ( system( $modCmd) ) {
+            print "ERROR: $modCmd\n"; 
+            exit(1); 
+        } 
+    }
+    
+}
+
+#   Upload the reidentified segmentation objects to brain PACS
+my $dcmSendCmd = "dcm_snd -e ${hiddenExamDir}"; 
+if ( $debug ) {
+    $dcmSendCmd .= " -D "; 
+    print "\n"; 
+    print "=================================================================================\n"; 
+    print `pwd` . "\n"; 
+    print "$dcmSendCmd\n\n"; 
+}
+$dcmSendCmd .= " -p ". DCM4CHEE::dcm4chee_get_pswd(); 
+if ( system( $dcmSendCmd ) ) {
+    print "ERROR: $dcmSendCmd\n"; 
+    exit(1); 
+} 
+
+my $rmCmd = "rm -rf ${hiddenExamDir}";  
+if ( $debug ) {
+    print `pwd` . "\n"; 
+    print "$rmCmd\n"; 
+}
+if ( system( $rmCmd ) ) {
+    print "ERROR: $rmCmd\n"; 
+    exit(1); 
+} 
+
+chdir("../"); 
+print "Series to retrieve\n"; 
+foreach my $f (@segSeriesToGet) 
+{
+    my $qrCmd = "dcm_qr -t $accessionNumber -s $f";
+    if ( $debug ) {
+        print "\n"; 
+        print "=================================================================================\n"; 
+        print `pwd` . "\n"; 
+        print "$qrCmd\n\n"; 
+    }
+    $qrCmd .= " -p " . DCM4CHEE::dcm4chee_get_pswd(); 
+    if ( system( $qrCmd ) ) {
+        print "ERROR: $qrCmd\n"; 
+        exit(1); 
+    } 
+}
+
+my $localBDir = `pwd`; 
+chomp $localBDir; 
+print "\n"; 
+print "#################################################################\n"; 
+print "Success:  Your ROIS have been uploaded and a deidentified copy is\n"; 
+print "          in the local b-directory:                              \n"; 
+print "          ${localBDir}/b#                                        \n"; 
+print "#################################################################\n"; 
+print "\n"; 
+
+
+###############################################################################
+#
+#   POD Usage docs
+#
+###############################################################################
+
+=head1 NAME
+
+upload_brainlab_rois 
+
+=head1 SYNOPSIS
+
+upload_brainlab_rois -e examDir [ -Dh ] 
+
+        -e  dir     Directory with exam retrieved from braino gateway. 
+        -D          Print debugging messages.
+        -h          Print help.
+
+=head1 DESCRIPTION
+
+Uploads brainlab ROIs to braino and brain PACS and creates deidentified copy in local b-directory. 
+
+
+=cut
+
+

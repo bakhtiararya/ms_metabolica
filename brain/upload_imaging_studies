@@ -1,0 +1,179 @@
+#!/usr/bin/perl -w
+
+#   $URL: https://intrarad.ucsf.edu/svn/rad_software/surbeck/brain/DB/nelson_ncvi/trunk/data_upload_qr_scripts/upload_imaging_studies $
+#   $Rev: 31671 $
+#   $Author: jasonc@RADIOLOGY.UCSF.EDU $
+#   $Date: 2014-05-21 10:02:56 -0700 (Wed, 21 May 2014) $
+#
+#   Specialized data upload script to migrate a csv file of projects to t-numbers
+#   in the old database to projects to the new. 
+#
+
+use strict;
+use DBI;
+use DBD::Pg;
+use Getopt::Long;
+Getopt::Long::config("bundling");
+use Pod::Usage;
+use File::Spec;
+use Cwd;
+use Cwd 'abs_path';
+require SET_BRAIN_MODULES;
+
+
+
+my $script    = $0;
+my ($t_num, $brain_id, $date, $subject_info_updated, $line, $filename);
+our $dbh; 
+
+GetOptions(
+    "f=s"       => \$filename,
+) or pod2usage(-verbose=>2, -exitval=>2);
+
+if (!defined $filename ) {
+    pod2usage(-verbose=>2, -exitval=>2);
+}
+
+
+
+##########################
+#   Connect to DB:
+##########################
+BRAIN_DB::brain_db_set_env( $script );
+$dbh = BRAIN_DB::brain_db_get_connection();
+
+print "Connecting to: " . $dbh->{Name} . "\n";
+
+open( INFILE, $filename ) or die("Can not open file: $!");
+
+while ( $line = <INFILE> ) {
+    # Get rid of return character
+    chomp($line); 
+
+    # split by comma
+    my @fields = split(/,/, $line);
+    
+    # Let's count the number of elements, make sure there are no extra commas
+    my $num_cols = $#fields + 1;
+    if( $num_cols != 2 ) {
+        print "ERROR: Cannot parse: $line \n";
+        exit(1);
+    }
+
+    # And the t_number
+    my $t_number = $fields[0];
+
+    
+    # extract t_number from field
+    if ($line =~ /t(\d+)/) { #extract with t prefix
+        $t_number = $1;
+    } elsif ($t_number =~ /^(\d+)$/) { # extract where t was omitted
+        $t_number = $1;
+    } else {
+        print "ERROR: Could not get t-number: \n";
+        print "$line\n";
+        exit(1);
+    }
+
+    # Lets get the study tag. all our tags are upper case
+    my $study_tag = uc($fields[1]);
+
+    # Let's validate the study_tag
+
+    if(    $study_tag eq uc("Gamma Knife Study")
+        || $study_tag eq uc("brain_clinical_exams")
+        || $study_tag eq uc("ABTC_06_03")
+        || $study_tag eq uc("po1_trials_misc")
+        || $study_tag eq uc("spore")
+        || $study_tag eq uc("spore_continued")
+        || $study_tag eq uc("ikhayal")
+        || $study_tag eq uc("7T_ENZA")
+        || $study_tag eq uc("3T_Hunt_Hess")
+        || $study_tag eq uc("7T_btumor_patients")
+        || $study_tag eq uc("7T_epilepsy")
+        || $study_tag eq uc("7T_Epilespy_Hess")
+        || $study_tag eq uc("7T_Hunt_Hess")
+        || $study_tag eq uc("7T_Other_Hess")
+        || $study_tag eq uc("7T_Prion_Hess")
+        || $study_tag eq uc("3T")
+        || $study_tag eq uc("brain_clinical")
+        || $study_tag eq uc("XRT Follow-up")
+        || $study_tag eq uc("Newly Diagnosed Pre-surgery")
+        || $study_tag eq uc("Recurrent Pre-surgery")
+        || $study_tag eq uc("Clinical Brain Tumor")
+        || $study_tag eq uc("Undesignated")
+        || $study_tag eq uc("Post-surgery")
+        || $study_tag eq uc("SPORE")
+        || $study_tag eq uc("RT Response")
+        || $study_tag eq uc("LG Response")
+        || $study_tag eq uc("1.5T vs 3T")
+        || $study_tag eq uc("Special Projects")
+        || $study_tag eq uc("HSS")
+        || $study_tag eq uc("SPORE2")
+        || $study_tag eq uc("McKnight R01")
+        || $study_tag eq uc("P01 Project 2")
+        || $study_tag eq uc("P01 Project 1")
+        || $study_tag eq uc("7T/3T") ) {
+        # We do not know how to map these studies so we will skip them
+        print "SKIPPING: Unknown Study- $study_tag\n";
+        next;
+    } else {
+
+        $study_tag = dbutuls_get_study_tag_from_path( $filename );
+
+    }
+
+
+    # Make sure both are not empty
+    if( $study_tag eq ""  || $t_number eq "") {
+        print "ERROR: study_tag or t_number not defined- $line\n";
+        exit(1);
+    }
+    # Let's get the imaging event ref from the db
+    my $event_ref = BRAIN_DB_UTILS::dbutils_get_event_ref( $t_number );
+
+    if( $event_ref != 0 ) { 
+
+        # Attempt to update
+        my $success = BRAIN_DB_UTILS::dbutils_update_event( $event_ref, $study_tag );
+
+        if( $success == -1 ) {
+            print " ERROR: executing failed-> select update_event($event_ref,\'$study_tag\')\n";
+            exit(1);
+        } else {
+            print " SUCCESS: executing for tnumber $t_number-> select update_event($event_ref,\'$study_tag\')\n";
+        }
+
+    } else {
+        print "ERROR: Could not locate event id for t-number: $t_number\n";
+    }
+}
+
+print "Finished Uploading to: " . $dbh->{Name} . "\n";
+close(INFILE);
+
+
+
+###############################################################################
+#
+#   POD Usage docs
+#
+###############################################################################
+
+=head1 NAME
+
+    upload_imaging_studies
+
+=head1 DESCRIPTION
+
+    This script will update studies for imaging events given a csv file with
+    t-numbers as the first column and study tags as the second column.
+
+=head1 SYNOPSIS
+
+    upload_imaging_studies -f filename
+
+        -f    filename    path to csv file to upload. 
+
+=cut
+

@@ -1,0 +1,58 @@
+#!/bin/tcsh  
+
+if ($#argv < 3) then
+  echo
+  echo "align_4d_rigid 4dimage refimage maskimage"
+  echo
+  echo "    Aligns the first image of the 4d immage to the reference image using BRAINSFit "
+  echo "              For example: "
+  echo "                  align_4d_rigid data_topup.nii.gz t1234_t1va.nii.gz epmask.nii.gz"
+  echo
+  echo "               will do the following:  "
+  echo "                1) Extract the first timepoint from 4d image with fslroi  "
+  echo "                2) Apply mask on first timepoint image "
+  echo "                3) rigidly align the _first image to the _t1va "
+  echo "                4) apply the alignment to the entire 4d dataset"
+  echo
+  echo "              Visual Alignment Check:  "
+  echo "                Look at _first image and _t1va image and visually confirm they are aligned. "
+  echo
+  echo "     Written by:  Prasanna Parvathaneni"
+  exit
+endif
+
+
+img4d=$1
+ref=$2
+mask=$3
+
+#fslroi data_topup.nii.gz $tnum\_first_topup 0 1
+fslroi $img4d\.nii.gz $img4d\_first 0 1
+fslmaths $img4d\_first.nii.gz -mas $mask $img4d\_first_br.nii.gz
+# Rigid Registration using Brainsfit
+BRAINSFit --fixedVolume $ref\.nii.gz --movingVolume $img4d\_first_br.nii.gz --outputVolume $img4d\_$ref\_brainsfit.nii.gz --outputTransform $img4d\_$ref\_brainsfit.tfm --transformType Rigid
+
+## BRAINSResample
+
+# Loop through the filenames to apply brainsfit
+fslsplit $img4d\.nii.gz $img4d\_3d -t 
+echo "Start of BRAINSResample";
+date;
+for file in ./$img4d\_3d*; do
+#for file in ./*; do
+  echo ${file##*/}
+  echo ${file##*/} | cut -d . -f1
+  fileprefix=$(echo ${file##*/} | cut -d . -f1)
+  echo $fileprefix
+  BRAINSResample --inputVolume $file  --referenceVolume $img4d\_first_br.nii.gz --warpTransform $img4d\_$ref\_brainsfit.tfm --outputVolume $fileprefix\_brainsfit_xfm.nii.gz --pixelType short
+done
+
+echo "End of BRAINSResample";
+date;
+echo "Start of fslmerge";
+fslmerge -t $img4d\_align.nii.gz `imglob -oneperimage $img4d\_3d*brainsfit*`
+echo "End of fslmerge";
+#Clean up temp files
+rm $img4d\_3d*;
+rm $img4d\_*brainsfit_xfm*;
+date;

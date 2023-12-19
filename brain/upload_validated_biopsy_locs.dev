@@ -1,0 +1,282 @@
+#!/usr/bin/perl
+
+#   $URL: https://intrarad.ucsf.edu/svn/rad_software/surbeck/brain/DB/nelson_ncvi/trunk/data_upload_qr_scripts/upload_validated_biopsy_locs $
+#   $Rev: 31671 $
+#   $Author: jasonc@RADIOLOGY.UCSF.EDU $
+#   $Date: 2014-05-21 10:02:56 -0700 (Wed, 21 May 2014) $
+#
+#   Specialized data upload script to upload validated biopsy LPS coords referenced to t1c image. 
+#
+
+use strict;
+use DBI;
+use DBD::Pg;
+use Getopt::Long;
+Getopt::Long::config("bundling");
+use Pod::Usage;
+use File::Spec;
+use Cwd;
+use Cwd 'abs_path';
+require SET_BRAIN_MODULES;
+use Spreadsheet::ParseExcel;
+
+sub do_sfnum_and_bnum_match($$);
+
+my $script    = $0;
+
+our $xl_row; 
+
+
+##########################
+# read in arguments
+##########################
+my ($debug, $spreadsheet_name); 
+
+GetOptions(
+    "xl=s"       => \$spreadsheet_name,
+    "D"          => \$debug
+) or pod2usage(-verbose=>2, -exitval=>2);
+
+if (!defined $spreadsheet_name ) {
+    pod2usage(-verbose=>2, -exitval=>2);
+}
+
+
+##########################
+#   Connect to DB:
+##########################
+BRAIN_DB::brain_db_set_env( $script );
+my $dbh = BRAIN_DB::brain_db_get_connection();
+
+
+my $parser   = Spreadsheet::ParseExcel->new();
+
+my $fname = $spreadsheet_name; 
+my $workbook = $parser->parse($fname);
+
+if ( !defined $workbook ) {
+    die $parser->error(), ".\n";
+}
+
+my ($sf_num, $ce); 
+my ($vial_L_pos, $vial_P_pos, $vial_S_pos);
+
+for my $worksheet ( $workbook->worksheets() ) {
+
+    my $worksheet_name = $worksheet->get_name(); 
+
+    print "\n\n########################\n";
+    print "WORKSHEET_NAME: $worksheet_name \n";
+    print "########################\n\n\n";
+
+    if ($worksheet_name ne "advanced search results - Table") { 
+        next;
+    }
+
+        
+    my ( $row_min, $row_max ) = $worksheet->row_range();
+    my ( $col_min, $col_max ) = $worksheet->col_range();
+
+    for $xl_row ( $row_min .. $row_max ) {
+
+        print "\n\n"; 
+        print "==========================================\n"; 
+        print "Next row = $xl_row \n";
+        print "\n"; 
+
+        #   parse fields adam 
+        my $cell_sf_num       = $worksheet->get_cell( $xl_row, 4 );
+        my $cell_vial_num     = $worksheet->get_cell( $xl_row, 5 );
+        my $cell_ce           = $worksheet->get_cell( $xl_row, 10 );
+        my $cell_vial_label   = $worksheet->get_cell( $xl_row, 6 );
+        my $cell_vial_L_pos_t1c = $worksheet->get_cell( $xl_row, 11 );
+        my $cell_vial_P_pos_t1c = $worksheet->get_cell( $xl_row, 12 );
+        my $cell_vial_S_pos_t1c = $worksheet->get_cell( $xl_row, 13 );
+        my $cell_vial_L_pos   = $worksheet->get_cell( $xl_row, 7 );
+        my $cell_vial_P_pos   = $worksheet->get_cell( $xl_row, 8 );
+        my $cell_vial_S_pos   = $worksheet->get_cell( $xl_row, 9 );
+
+        #   parse fields qwen 
+#        my $cell_sf_num       = $worksheet->get_cell( $xl_row, 5 );
+#        my $cell_vial_num     = $worksheet->get_cell( $xl_row, 6 );
+#        my $cell_vial_label   = $worksheet->get_cell( $xl_row, 7 );
+#        my $cell_ce           = $worksheet->get_cell( $xl_row, 16 );
+#        my $cell_vial_L_pos_t1c = $worksheet->get_cell( $xl_row, 12 );
+#        my $cell_vial_P_pos_t1c = $worksheet->get_cell( $xl_row, 13 );
+#        my $cell_vial_S_pos_t1c = $worksheet->get_cell( $xl_row, 14 );
+#        my $cell_vial_L_pos   = $worksheet->get_cell( $xl_row, 8 );  #  original LPS values
+#        my $cell_vial_P_pos   = $worksheet->get_cell( $xl_row, 9 );
+#        my $cell_vial_S_pos   = $worksheet->get_cell( $xl_row, 10 );
+
+        my $last_sf_num; 
+
+        #   sf number
+        $sf_num = "";
+        if (defined $cell_sf_num) {
+            $sf_num = $cell_sf_num->value(); 
+            if ( $sf_num =~ m/(\d+)\b/ ) { 
+                $sf_num = $1; 
+            } else {
+                $sf_num = ""; 
+            }
+        }
+
+
+        #
+        #   Is this a duplicate row:  same b/t/sf, but different tissue sample:
+        #
+        if ( $sf_num eq "" ) {
+            $sf_num = $last_sf_num; 
+        }
+
+        #   vial_num and color
+        my $vial_num = ""; 
+        if (defined $cell_vial_num) {
+            $vial_num= $cell_vial_num->value(); 
+            if ( $vial_num =~ m/(\S+)\b/ ) { 
+                $vial_num = $1; 
+            } else {
+                $vial_num = ""; 
+            }
+        }
+
+        #   vial_label
+        my $vial_label = ""; 
+        if (defined $cell_vial_label) {
+            $vial_label = $cell_vial_label->value(); 
+            if ( $vial_label =~ m/(\S+)\b/ ) { 
+                $vial_label = $1; 
+            } else {
+                $vial_label = ""; 
+            }
+        }
+
+        #   LPS Coords
+        my $ce = "";
+        if (defined $cell_ce) {
+            $ce = $cell_ce->value(); 
+            if ($ce eq "E_NE") {
+                $ce = "NE+E";
+            }
+            if ($ce eq "E+NE") {
+                $ce = "NE+E";
+            }
+        }
+
+        #   LPS Coords
+        my $vial_L_pos = "";
+        if (defined $cell_vial_L_pos) {
+            $vial_L_pos = $cell_vial_L_pos->value(); 
+        }
+        my $vial_P_pos = "";
+        if (defined $cell_vial_P_pos) {
+            $vial_P_pos = $cell_vial_P_pos->value(); 
+        }
+        my $vial_S_pos = "";
+        if (defined $cell_vial_S_pos) {
+            $vial_S_pos = $cell_vial_S_pos->value(); 
+        }
+        my $vial_L_pos_t1c = "";
+        if (defined $cell_vial_L_pos_t1c) {
+            $vial_L_pos_t1c = $cell_vial_L_pos_t1c->value(); 
+        }
+        my $vial_P_pos_t1c = "";
+        if (defined $cell_vial_P_pos_t1c) {
+            $vial_P_pos_t1c = $cell_vial_P_pos_t1c->value(); 
+        }
+        my $vial_S_pos_t1c = "";
+        if (defined $cell_vial_S_pos_t1c) {
+            $vial_S_pos_t1c = $cell_vial_S_pos_t1c->value(); 
+        }
+
+        if (defined $debug) {
+            print "sf#     : $sf_num \n";
+            print "vialID  : $vial_num\n";
+            print "vialLabel: $vial_label\n";
+            print "contrast: $ce\n";
+            print "Lpos    : $vial_L_pos\n";
+            print "Ppos    : $vial_P_pos\n";
+            print "Spos    : $vial_S_pos\n";
+            print "Lpost1c : $vial_L_pos_t1c\n";
+            print "Ppost1c : $vial_P_pos_t1c\n";
+            print "Spost1c : $vial_S_pos_t1c\n";
+        }
+
+
+        if ( $sf_num ne "" && $vial_num ne "" && $vial_label ne "" && $ce ne "" && $vial_L_pos ne "" && $vial_P_pos ne "" && $vial_S_pos ne "" ) {
+                
+            #
+            #   Verify that the sfnumber and bnumber match before creating a new event: 
+            #
+
+            #
+            #   Update contrast
+            #
+            my $cmd = "insert_tissue_sample";
+            if ( $script =~ m/\.dev$/ ) { 
+                $cmd .= ".dev";
+            }    
+            $cmd .= " --sf_num $sf_num"; 
+            $cmd .= " --vial_num $vial_num"; 
+            $cmd .= " --vial_color $vial_label"; 
+            $cmd .= " --contrast_enhancing $ce "; 
+            $cmd .= " --vial_L_pos $vial_L_pos"; 
+            $cmd .= " --vial_P_pos $vial_P_pos"; 
+            $cmd .= " --vial_S_pos $vial_S_pos"; 
+
+            print "$cmd\n";
+            if ( system($cmd) ) {
+                print "##########################\n";
+                print "ERROR: failed running $cmd\n";
+                print "##########################\n";
+            }
+        }
+
+        if ( $sf_num ne "" && $vial_num ne "" && $vial_L_pos_t1c ne "" && $vial_P_pos_t1c ne "" && $vial_S_pos_t1c ne "" ) {
+
+            #
+            #   insert validated t1c values
+            #
+            my $cmd = "insert_tissue_sample";
+            if ( $script =~ m/\.dev$/ ) { 
+                $cmd .= ".dev";
+            }    
+            $cmd .= " --validated_locs "; 
+            $cmd .= " --sf_num $sf_num"; 
+            $cmd .= " --vial_num $vial_num"; 
+            $cmd .= " --vial_L_pos $vial_L_pos_t1c"; 
+            $cmd .= " --vial_P_pos $vial_P_pos_t1c"; 
+            $cmd .= " --vial_S_pos $vial_S_pos_t1c"; 
+    
+            print "$cmd\n";
+            if ( system($cmd) ) {
+                print "##########################\n";
+                print "ERROR: failed running $cmd\n";
+                print "##########################\n";
+            }
+        }       
+    }
+        
+}
+
+
+###############################################################################
+#
+#   POD Usage docs
+#
+###############################################################################
+
+=head1 NAME
+
+    upload_validated_biopsy_locs
+
+=head1 SYNOPSIS
+
+    
+    upload_validated_biopsy_locs --xl spreadsheet_name
+
+        --xl    spreadsheet_name    path to spreadsheet to upload. 
+        -D                          Print debugging messages.
+
+=cut
+

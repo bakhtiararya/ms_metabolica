@@ -1,0 +1,37 @@
+#!/usr/bin/perl
+
+#$Header: /opt/src/cvsroot/brain/abs_path/abs_path,v 1.1.1.1 2006/02/28 00:55:41 mclee Exp $
+
+use Cwd 'abs_path';
+use File::Basename;
+
+unless (@ARGV == 1) {
+  usage();
+}
+
+($name, $path, $suffix) = fileparse($ARGV[0]);
+
+$path = abs_path($path);
+
+print "$path/$name$suffix";
+
+##############################
+
+sub usage {
+  print << "EOF";
+
+Usage: abs_path <filename or path>
+
+       Reports the absolute path of the specified file or directory.  
+       The requested file or path need not exist.  All symbolic links will
+       also be resolved.  
+
+       For example:
+
+         > abs_path ../../images/t1234_t1c.idf  
+
+           /data/spore/s0000/t1234/images/t1234_t1c.idf
+
+EOF
+  exit(1);
+}

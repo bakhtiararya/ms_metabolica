@@ -1,0 +1,596 @@
+#!/usr/bin/perl -w
+
+#   $URL: https://intrarad.ucsf.edu/svn/rad_software/surbeck/brain/registration/trunk/align_tool $
+#   $Rev: 37065 $
+#   $Author: bolson@RADIOLOGY.UCSF.EDU $
+#   $Date: 2015-12-15 11:56:08 -0800 (Tue, 15 Dec 2015) $
+#
+#   This script is a wrapper around alignment tools that deals with conversion of types to/from NIFTI. 
+#
+
+use strict;
+use File::Basename;
+use Getopt::Long;
+Getopt::Long::config("bundling");
+use Pod::Usage;
+use Cwd;
+use Cwd 'abs_path';
+use XML::Simple;
+use Data::Dumper;
+use MRSCUtil_v6;
+use MRSC_CSI_v6;
+
+
+sub resample_data( $$$$ );
+sub convert_data_to_nifti( $ );
+sub run_align_command( $$ );
+sub convert_output_data_from_nifti( $$ );
+sub trim( $ );
+sub exit_gracefully( $ );
+
+my $script     = $0;
+my @orig_args  = @ARGV;
+my $cmd_ext = "";
+if ( $script =~ m/\.dev$/ ) {
+    $cmd_ext .= ".dev";
+}
+
+
+#######################################
+# Parse command line arguments
+#######################################
+GetOptions(
+    "m=s"                => \my  $align_mode,
+    "k=s"                => \my  $align_toolkit,
+    "f=s"                => \my  $align_flags,
+    "t=s"                => \my  $transform_file,
+    "c=s"                => \my  $config_file,
+    "o=s"                => \my  $output_dir,
+    "byt_to_real"        => \my  $byt_to_real,
+    "v"                  => \our $verbose,
+    "z"                  => \my  $visualize,
+    "s"                  => \our $save_temp,
+    "h"                  => \my  $help,
+    "help=s"             => \my  $help_cmd,
+) or pod2usage(-verbose=>2, -exitval=>2);
+
+our $redirect_output = "";
+
+if( defined($verbose) ) {
+    print "Running in verbose mode...\n";
+} else {
+    # If we are not in verbose mode lets redirect the output
+    $redirect_output =" >& /dev/null ";
+}
+my $cwd        = getcwd();
+my $moving_vol = $ARGV[0];
+my $fixed_vol  = $ARGV[1];
+my $output_vol = $ARGV[2];
+our $ext       = "idf";
+my $data_type_moving;
+my $data_type_fixed;
+my @data_types = ("int2", "byt", "real");
+
+###############################################################################
+# Set default configuration file
+###############################################################################
+if(!defined($config_file)){
+    if( $cmd_ext ne "" ) {
+        $config_file = "/netopt/share/lib/local/config/align_tool/dev/align_tool_config.xml";
+    } else {
+        $config_file = "/netopt/share/lib/local/config/align_tool/align_tool_config.xml";
+    }
+}
+if( !(-e $config_file) ) {
+    print "ERROR: Could not located config file:$config_file.\n";
+    exit_gracefully(1);
+}
+###############################################################################
+
+###############################################################################
+# Read configuration file and print help message for command if requested
+###############################################################################
+my $xml = new XML::Simple;
+my $config_xml = $xml->XMLin($config_file);
+
+if( defined($help_cmd) ) {
+    my $help_cmd = trim($config_xml->{TOOLKIT}->{$help_cmd}->{DEFAULT_COMMAND}->{help}->{content});
+    system($help_cmd);
+    exit_gracefully(0);
+}
+###############################################################################
+
+###############################################################################
+# Validate arguments 
+###############################################################################
+if( defined($help) ) {
+    pod2usage(-verbose=>2, -exitval=>2);
+}
+
+if( !defined($moving_vol)) {
+    print "ERROR: No moving volume defined. Run again with -h for help.\n";
+    exit_gracefully(1);
+}
+
+if( !defined($fixed_vol)) {
+    print "ERROR: No fixed volume defined. Run again with -h for help.\n";
+    exit_gracefully(1);
+}
+
+if( !(-e "$cwd/$moving_vol.$ext") ) {
+    print "ERROR: Could not located moving image:$moving_vol.$ext.\n";
+    exit_gracefully(1);
+} else {
+    foreach (@data_types) {
+        my $data_type = $_;
+        if( -e "$cwd/$moving_vol.$data_type" ) {
+            $data_type_moving = $data_type; 
+        }
+    }
+}
+if(!defined($output_dir) ) {
+    $output_dir = "./";
+} elsif ( !(-e "$output_dir") ) {
+    print "ERROR: Output directory does not exist:$output_dir.\n";
+    exit_gracefully(1);
+} 
+
+if( !(-e "$cwd/$fixed_vol.$ext") ) {
+    print "ERROR: Could not located fixed image:$fixed_vol.$ext.\n";
+    exit_gracefully(1);
+} else {
+    foreach (@data_types) {
+        my $data_type = $_;
+        if( -e "$cwd/$fixed_vol.$data_type" ) {
+            $data_type_fixed = $data_type; 
+        }
+    }
+}
+
+if( !defined($data_type_fixed) ) {
+    print "ERROR: Could not determine data type fixed image:$fixed_vol.?.\n";
+    exit_gracefully(1);
+}
+
+if( !defined($data_type_moving) ) {
+    print "ERROR: Could not determine data type fixed image:$moving_vol.?.\n";
+    exit_gracefully(1);
+}
+
+###############################################################################
+
+###############################################################################
+# Start logging 
+###############################################################################
+my $log_cmd = "log_processing -l $cwd -s \"$script @orig_args\"";
+if( defined( $verbose ) ) {
+    print "Executing: $log_cmd\n";
+}
+
+if( system("$log_cmd$redirect_output") != 0 ) {
+    print "ERROR: $log_cmd failed. \n";
+    exit_gracefully(1);
+}
+###############################################################################
+
+###############################################################################
+# Setup default values 
+###############################################################################
+if(!defined($align_toolkit)) {
+    $align_toolkit="fsl";
+}
+
+if(!defined($align_mode)) {
+    $align_mode="intra";
+}
+
+if(defined($transform_file)) {
+    $align_mode="transform";
+}
+
+if(!defined($output_vol)) {
+    $output_vol = "${moving_vol}a";
+}
+
+if(defined($align_flags)) {
+    if(defined($transform_file)) {
+        $align_mode="transform_manual";
+    } else {
+        $align_mode="manual";
+    }
+}
+
+my $moving_vol_no_path = basename($moving_vol);
+my $fixed_vol_no_path = basename($fixed_vol);
+my $transform_file_no_path;
+if( defined( $transform_file ) ) {
+    $transform_file_no_path = basename($transform_file);
+}
+
+
+my $transform_output = "${moving_vol_no_path}_to_${fixed_vol_no_path}_transform";
+
+if( defined($verbose) ) {
+    if( defined( $fixed_vol ) ) {
+        print "Fixed Image: $fixed_vol\n";
+    }
+    print "Moving Image: $moving_vol\n";
+    if( defined( $transform_file ) ) {
+        print "Transform File: $transform_file\n";
+    }
+    print "Output volume = $output_vol\n";
+}
+###############################################################################
+
+###############################################################################
+# Create Temporary Directory and link moving data, and copy transform if one
+# was provided by the user. 
+###############################################################################
+my $temp_dir = cwd() . "/align_temp_$$";
+if( $verbose ) {
+    print "Making temporary directory: $temp_dir\n";
+}
+mkdir "$temp_dir" or die $!;
+
+# Link moving data into temp directory 
+my $ln_moving_cmd = "cd $temp_dir; ln -s ../$moving_vol.$data_type_moving; ln -s ../$moving_vol.$ext";
+
+if( defined( $verbose ) ) {
+    print "Executing: $ln_moving_cmd\n";
+}
+if( system("$ln_moving_cmd$redirect_output") != 0 ) {
+    print "ERROR: $ln_moving_cmd failed. \n";
+    exit_gracefully(1);
+}
+if( defined( $transform_file ) ) {
+    my $ln_transform_cmd = "cd $temp_dir; ln -s ../$transform_file";
+
+    if( defined( $verbose ) ) {
+        print "Executing: $ln_transform_cmd\n";
+    }
+    if( system("$ln_transform_cmd$redirect_output") != 0 ) {
+        print "ERROR: $ln_transform_cmd failed. \n";
+        exit_gracefully(1);
+    }
+}
+###############################################################################
+
+###############################################################################
+# If there is a fixed volume, link it into the temp directory and resample the
+# moving volume to it. 
+###############################################################################
+if( defined($fixed_vol) ) {
+    #link fixed data
+    my $ln_fixed_cmd = "cd $temp_dir; ln -s ../$fixed_vol.$data_type_fixed; ln -s ../$fixed_vol.$ext";
+    if( defined( $verbose ) ) {
+        print "Executing: $ln_fixed_cmd\n";
+    }
+    if( system("$ln_fixed_cmd$redirect_output") != 0 ) {
+        print "ERROR: $ln_fixed_cmd failed. \n";
+        exit_gracefully(1);
+    }
+
+    # For now lets skip the resampling....
+    #resample_data($fixed_vol, $moving_vol, $data_type_fixed, $data_type_moving );
+}
+###############################################################################
+
+###############################################################################
+# Convert data to nifti 
+###############################################################################
+convert_data_to_nifti($moving_vol_no_path);
+
+if( defined( $fixed_vol ) ) {
+    convert_data_to_nifti($fixed_vol_no_path);
+}
+###############################################################################
+
+if( $verbose ) {
+    # Keeping this line here just to have the syntax for Dumper.
+    print Dumper($config_xml->{TOOLKIT}->{$align_toolkit}->{DEFAULT_COMMAND}->{$align_mode}->{content});
+}
+
+###############################################################################
+# Grab alignment command from config file and perform alignment 
+###############################################################################
+my $align_cmd = trim($config_xml->{TOOLKIT}->{$align_toolkit}->{DEFAULT_COMMAND}->{$align_mode}->{content});
+if( !defined($align_cmd) || $align_cmd eq "" ) {
+    print "ERROR: Could not locate alignment command for toolkit $align_toolkit with defaults $align_mode. \n";
+    exit_gracefully(1);
+}
+
+$align_cmd = "cd $temp_dir;$align_cmd";
+$align_cmd =~ s/\$moving_vol/$moving_vol_no_path/g;
+$align_cmd =~ s/\$fixed_vol/$fixed_vol_no_path/g;
+$align_cmd =~ s/\$output_vol/$output_vol/g;
+$align_cmd =~ s/\$align_flags/$align_flags/g;
+$align_cmd =~ s/\$transform_output/$transform_output/g;
+$align_cmd =~ s/\$transform_file/$transform_file_no_path/g;
+
+if( defined( $verbose ) ) {
+    print "Executing: $align_cmd\n";
+}
+if( system("$align_cmd$redirect_output") != 0 ) {
+    print "ERROR: $align_cmd failed. \n";
+    exit_gracefully(1);
+}
+###############################################################################
+
+###############################################################################
+# Convert results from nifti. 
+###############################################################################
+convert_output_data_from_nifti($moving_vol, $output_vol);
+
+my $copy_results_cmd = "cp $temp_dir/$output_vol.$ext $output_dir;";
+if( $data_type_moving eq "byt" ) {
+    # byt files are convert to int2 on output.
+    $data_type_moving = "int2";
+    if( defined($byt_to_real) ) {
+        $data_type_moving = "real";
+    }
+}
+$copy_results_cmd   .= "cp $temp_dir/$output_vol.$data_type_moving $output_dir;";
+if( !defined($transform_file) ) {
+    $copy_results_cmd   .= "cp $temp_dir/$transform_output* $output_dir";
+}
+
+if( defined( $verbose ) ) {
+    print "Executing: $copy_results_cmd\n";
+}
+
+if( system("$copy_results_cmd$redirect_output") != 0 ) {
+    print "ERROR: $copy_results_cmd failed. \n";
+    exit_gracefully(1);
+}
+###############################################################################
+
+print "\nRegistration complete!\n";
+print "\n######################################################################################\n\n";
+print "NOTE: Please ALWAYS verify the orientation of your output when using nifti files!\n\n";
+print "######################################################################################\n\n";
+
+
+###############################################################################
+# Log completion of job and the visualize if requested. 
+###############################################################################
+$log_cmd = "log_processing -l $cwd -e \"$script @orig_args\"";
+if( defined( $verbose ) ) {
+    print "Executing: $log_cmd\n";
+}
+if( system("$log_cmd$redirect_output") != 0 ) {
+    print "ERROR: $log_cmd failed. \n";
+    exit_gracefully(1);
+}
+if( $visualize ) {
+    my $viz_cmd = "cd $temp_dir; svk_multi_view.dev $fixed_vol.$ext $output_vol.$ext";
+    
+    #TODO: There is a bug in svk_multi_view that causes it to segfault after running. Once that's fixed but in this check.
+    #if( system("$viz_cmd$redirect_output") != 0) {
+    #    print "ERROR: Alignment completed successfully but visualization failed. \n";
+    #    exit_gracefully(1);
+    #}
+
+    if( $verbose ) {
+        print $viz_cmd;
+    }
+    system("$viz_cmd$redirect_output");
+}
+exit_gracefully(0); 
+###############################################################################
+
+
+#######################
+#     SUBROUTINES
+#######################
+
+#################################################
+# Converts output data from nifti to idf.
+#################################################
+sub resample_data( $$$$ )
+{
+    my($target_vol, $vol_to_resample, $target_data_type, $data_type ) = @_;
+    my $resample_command = "cd $temp_dir; resample_imagev5 $vol_to_resample.$data_type $target_vol.$ext";
+    if( defined( $verbose ) ) {
+        print "Executing: $resample_command\n";
+    }
+    if( system("$resample_command$redirect_output") != 0 ) {
+        print "ERROR: $resample_command failed. \n";
+        exit_gracefully(1);
+    }
+
+    # move the resampled data to replace the copied original
+    my $mv_resampled_cmd = "cd $temp_dir; mv ${vol_to_resample}r.$ext $vol_to_resample.$ext; mv ${vol_to_resample}r.$target_data_type $vol_to_resample.$target_data_type";
+    if( defined( $verbose ) ) {
+        print "Executing: $mv_resampled_cmd\n";
+    }
+    if( system("$mv_resampled_cmd$redirect_output") != 0 ) {
+        print "ERROR: $mv_resampled_cmd failed. \n";
+        exit_gracefully(1);
+    }
+}
+
+#################################################
+# Converts output data from nifti to idf.
+#################################################
+sub convert_data_to_nifti( $ )
+{
+    my($vol) = @_;
+    my $convert_moving_cmd = "cd $temp_dir; nifti_file_convert$cmd_ext --input $vol.$ext --output_root $vol";
+    if( defined( $verbose ) ) {
+        print "Executing: $convert_moving_cmd\n";
+    }
+    if( system("$convert_moving_cmd$redirect_output") != 0 ) {
+        print "ERROR: $convert_moving_cmd failed. \n";
+        exit_gracefully(1);
+    }
+}
+
+
+#################################################
+# Converts output data from nifti to idf.
+#################################################
+sub convert_output_data_from_nifti( $$ )
+{
+    my($src_vol, $output_name) = @_;
+    # Lets grab the study id
+    my $study_id = "unknown";
+    my $accession_line = `svk_dcmdump $src_vol.$ext | grep -i accession`;
+    if( $accession_line =~ m/\[(.*)\]/ ) {
+        $study_id = $1;
+    }
+
+    # Lets grab the series number
+    my $series_number = "1234";
+    my $series_line = `svk_dcmdump $src_vol.$ext | grep -i seriesnumber`;
+    if( $series_line =~ m/\[(.*)\]/ ) {
+        $series_number = $1;
+    }
+
+    # Lets grab the patient id
+    my $patient_id = "unknown";
+    my $patient_line = `svk_dcmdump $src_vol.$ext | grep -i patientid`;
+    if( $patient_line =~ m/\[(.*)\]/ ) {
+        $patient_id = $1;
+    }
+
+    # Lets grab the patient name
+    my $patient_name = "unknown";
+    my $patient_name_line = `svk_dcmdump $src_vol.$ext | grep -i patientname`;
+    if( $patient_name_line =~ m/\[(.*)\]/ ) {
+        $patient_name = $1;
+    }
+
+    # Lets grab the series description
+    my $series_description = "Aligned --";
+    my $description_line = `svk_dcmdump $src_vol.$ext | grep -i seriesdescription`;
+    if( $description_line =~ m/\[(.*)\]/ ) {
+        $series_description = $1 . " Aligned";
+    }
+
+    my($moving_root, $moving_dir, $suffix) = fileparse($src_vol, qr/\.[^.]*/);
+    if( !defined( $output_name) ) {
+        $output_name = "${moving_root}a";
+    }
+
+    my $convert_result_cmd = "cd $temp_dir; nifti_file_convert$cmd_ext ";
+    if( $data_type_moving eq "real" || ( $data_type_moving eq "byt" && defined($byt_to_real)) ) {
+        $convert_result_cmd .= " --scale_nifti ";
+    }
+    $convert_result_cmd .= " --accession $study_id ";
+    $convert_result_cmd .= " --swap_dims ";
+    $convert_result_cmd .= " --input $output_name.nii.gz ";
+    $convert_result_cmd .= " --output_root $output_name ";
+    $convert_result_cmd .= " --from_nii_arguments \'";
+    $convert_result_cmd .= " --patientName \"$patient_name\" ";
+    $convert_result_cmd .= " --patientID $patient_id ";
+    $convert_result_cmd .= " --studyID $study_id ";
+    $convert_result_cmd .= " --seriesNumber $series_number ";
+    $convert_result_cmd .= " --seriesDescription \"$series_description\"\'";
+
+    if( defined( $verbose ) ) {
+        print "Executing: $convert_result_cmd\n";
+    }
+    if( system("$convert_result_cmd$redirect_output") != 0 ) {
+        print "ERROR: $convert_result_cmd failed. \n";
+        exit_gracefully(1);
+    }
+}
+
+#################################################
+# Removes whitespace around string.
+#################################################
+sub trim ( $ )
+{
+    my( $string ) = @_;
+    if( $string ) {
+        $string =~ s/^\s+//;
+        $string =~ s/\s+$//;
+    }
+    return $string;
+}
+
+################################################
+#  Exits and removes temporary files
+################################################
+sub exit_gracefully( $ ) {
+    my ($exit_status) = @_;
+    if( defined($temp_dir) && -e $temp_dir && !defined($save_temp) ) {
+        system("rm -r $temp_dir");
+    }
+    if( !$verbose && $exit_status != 0 ) {
+        print "ERROR: Please run again with -v for details.\n"
+    }
+    exit( $exit_status );
+}
+
+
+###############################################################################
+#
+#   POD Usage docs
+#
+###############################################################################
+
+=head1 NAME
+
+align_tool
+
+=head1 SYNOPSIS
+
+align_tool is a wrapper script to call external programs to register images.
+
+align_tool moving_vol fixed_vol [output_vol]
+
+    basic optional arguments:
+
+        -k      toolkit    The alignment program to use. Default=fsl. [BRAINS, fsl].
+        -m      mode       The alignment mode. Default=intra. [intra]
+        -f      flags      Flags to use during alignment. Overrides defaults. Use quotes.
+        -t      transform  Apply a transform instead of performing registration. 
+        -c      file.xml   Config file to use. Default=align_tool_config.xml.
+        -o      dir        Output directory. 
+        --byt_to_real      Option for converting byt input file to real output file to avoid rounding issues.
+        -s                 Save temp directory for debugging purposes.
+        -v                 Display verbose messages.
+        -h                 Print usage message for align_tool.
+        --help  program    Display usage for a particular registration program.
+
+=head1 DESCRIPTION
+
+This tool is an adapter for common registration tools. Currently it assumes idf
+inputs and that all alignment tools use the nifti format. It's behavior is defined by a 
+configuration file in combination with the user input options for 'tookit' and 'mode'.
+The 'toolkit' is the alignment toolkit or package you want to use. The 'mode' is used to
+define the default parameters to the requested tool which are stored in the configuration
+file. Since everything is converted to nifti please be aware of potential orientation issues
+especially Left-Right flipping though these problems seem to be less prevalent in newer 
+versions of fsl and dcm2nii which are used by the internally called converter: nifti_file_convert.
+
+NOTE: 
+    Default configuration files are stored here: /netopt/share/lib/local/config/align_tool/
+
+EXAMPLES:
+
+    Run with defaults: 
+        align_tool t1234_cube_fl t1234_t1c t1234_cube_fla
+
+    Run using BRAINS program:
+        align_tool -k BRAINS t1234_cube_fl t1234_t1c
+
+    Run using BRAINS program using the bspline mode defaults:
+        align_tool -k BRAINS -m bpsline t1234_cube_fl t1234_t1c
+
+    Apply a transform: 
+        align_tool t1234_cube_fl t1234_t1c t1234_cube_fla -t t1234_cube_fla_t1234_t1c_transform 
+
+    Use your own flags for alignment using default toolkit (fsl):
+        align_tool -f "-cost normmi -dof 9 -searchrx -20 20 -searchry -20 20 -searchrz -20 20" t1234_cube_fl t1234_t1c
+
+    Use your own flags for alignment using BRAINS toolkit:
+        align_tool -k BRAINS -f "--transformType Rigid,ScaleVersor3D,ScaleSkewVersor3D,BSpline" t1234_cube_fl t1234_t1c
+
+    Run to get help for toolkits:
+        align_tool --help BRAINS
+        align_tool --help fsl
+
+
+=cut

@@ -1,0 +1,744 @@
+#!/usr/bin/perl -w
+
+#   $URL: https://intrarad.ucsf.edu/svn/rad_software/surbeck/brain/DB/nelson_ncvi/trunk/data_upload_qr_scripts/upload_or_tissue_checklist $
+#   $Rev: 38906 $
+#   $Author: bolson@RADIOLOGY.UCSF.EDU $
+#   $Date: 2016-09-13 12:30:35 -0700 (Tue, 13 Sep 2016) $
+#
+#  This script parses an OR Checklist spreadsheet and uploads the
+#  the data to Cerebro.
+#
+
+use strict;
+use Getopt::Long;
+Getopt::Long::config("bundling");
+use Pod::Usage;
+use File::Spec;
+use Cwd;
+use Cwd 'abs_path';
+use Spreadsheet::ParseExcel;
+use Scalar::Util qw/ looks_like_number /;
+use MRSC_CSI_v6;
+require SET_BRAIN_MODULES;
+
+##########################################################################
+#
+#  These constants will be used as the keys to a hash for each row in the 
+#  spreadsheet. Each key is a column.
+#
+##########################################################################
+use constant SURGERY_DATE_KEY    => "Surgery Date";
+use constant T_NUMBER_KEY        => "Scan t-number";
+use constant B_NUMBER_KEY        => "Patient b-number";
+use constant SURGEON_KEY         => "Surgeon";
+use constant SF_KEY              => "Tissue Acquisition SF#";
+use constant SP_KEY              => "Surgery SP#";
+use constant STUDY_KEY           => "Study";
+use constant COLOR_KEY           => "Color";
+use constant ORDER_KEY           => "Order Collected";
+use constant VIAL_KEY            => "Vial #";
+use constant T1C_LR_KEY          => "T1C Location LR";
+use constant T1C_PA_KEY          => "T1C Location PA";
+use constant T1C_SI_KEY          => "T1C Location SI";
+use constant SURGERY_COMMENT_KEY => "Surgery Comments";
+use constant BASIS_KEY           => "Basis For Tissue Selection";
+
+
+##########################
+# Global Variables 
+##########################
+our($first_tissue_row, 
+    $basis_for_selection_offset, 
+    $debug, 
+    $spreadsheet_name, 
+    $print_summary, 
+    %surgery_field_cells, 
+    @tissue_samples,
+    $help ); 
+
+sub get_cell_for_surgery_key($$);
+sub get_cell_for_tissue_key($$$);
+sub get_basis_for_tissue_selection($$);
+sub parse_or_checklist();
+sub print_summary();
+sub run_upload_commands();
+sub exit_with_error($);
+sub exit_with_success();
+
+my $script    = $0;
+my @orig_args = @ARGV;
+my $data_dir  = getcwd();
+$data_dir = File::Spec->rel2abs($data_dir);
+push (@orig_args, " $data_dir ");
+my $log_dir= "/data/dicom_mb/index/Logfiles/ncvi_audit";
+csi_set_parent_dir($log_dir);
+csi_log_start($script, @orig_args);
+
+
+##########################
+# read in arguments
+##########################
+
+GetOptions(
+    "xl=s"       => \$spreadsheet_name,
+    "p"          => \$print_summary,
+    "D"          => \$debug,
+    "h"          => \$help
+) or pod2usage(-verbose=>2, -exitval=>2);
+
+if (!defined($spreadsheet_name) || defined($help) ) {
+    pod2usage(-verbose=>2, -exitval=>2);
+}
+
+##########################
+#   Connect to DB:
+##########################
+BRAIN_DB::brain_db_set_env( $script );
+if( $debug ) {
+    BRAIN_DB_UTILS::dbutils_turn_debug_on();
+}
+
+# This is the first row with sample data in it
+$first_tissue_row = 14;
+my $path = getcwd();
+
+
+#Global Variables
+%surgery_field_cells = ();
+@tissue_samples = ();
+
+# Let's read the spreadsheet...
+parse_or_checklist();
+
+# Make sure this is being run from the correct b/t/sf folder...
+if ( $path =~ m/\/\w+\/\w+\/\w+\/b(\d+)\/t(\d+)\/sf(\d+)/ ) {
+    my $b_num_from_path = $1;
+    my $t_num_from_path = $2;
+    my $sf_num_from_path = $3;
+    if( $debug ) {
+        print "b  number from path=      $b_num_from_path  \n";
+        print "b  number from checklist= " . $surgery_field_cells{B_NUMBER_KEY()}->value() . "\n";
+        print "t  number from path=      $t_num_from_path  \n";
+        print "t  number from checklist= " . $surgery_field_cells{T_NUMBER_KEY()}->value() . "\n";
+        print "sf number from path=      $sf_num_from_path \n";
+        print "sf number from checklist= " . $surgery_field_cells{SF_KEY()}->value() . "\n";
+    }
+    if( $surgery_field_cells{B_NUMBER_KEY()}->value() != $b_num_from_path
+        || $surgery_field_cells{T_NUMBER_KEY()}->value() != $t_num_from_path
+        || $surgery_field_cells{SF_KEY()}->value() != $sf_num_from_path ) {
+        exit_with_error("Mismatch between b/t/sf number from spreadsheet to current directory!\n");
+    }
+} else {
+    exit_with_error("This script must be run from within a b/t/sf folder.\n");
+}
+
+
+if( !defined($print_summary) ) {
+    run_upload_commands();
+}
+print_summary();
+
+csi_log_end($script, @orig_args);
+exit_with_success();
+
+###############################################################################
+#   Subroutines
+###############################################################################
+sub run_upload_commands() {
+    print "======================================================================\n";
+    my $sample;
+    
+    # Let's start by adding the biopsy event:
+    my $insert_biopsy_event_cmd = "insert_biopsy_event";
+    if ( $script =~ m/\.dev$/ ) {
+        $insert_biopsy_event_cmd .= ".dev";
+    }
+    $insert_biopsy_event_cmd .= " --bnum " . $surgery_field_cells{B_NUMBER_KEY()}->value();
+    $insert_biopsy_event_cmd .= " --tnum " . $surgery_field_cells{T_NUMBER_KEY()}->value();
+    $insert_biopsy_event_cmd .= " --date \"" . $surgery_field_cells{SURGERY_DATE_KEY()}->value() . "\"";
+    $insert_biopsy_event_cmd .= " --sf_num " . $surgery_field_cells{SF_KEY()}->value();
+    $insert_biopsy_event_cmd .= " --sp_num \"" . $surgery_field_cells{SP_KEY()}->value() . "\"";
+    $insert_biopsy_event_cmd .= " --study \"" . $surgery_field_cells{STUDY_KEY()}->value() . "\"";
+    $insert_biopsy_event_cmd .= " --surgeon \"" . $surgery_field_cells{SURGEON_KEY()}->value() . "\"";
+    if( defined( $surgery_field_cells{SURGERY_COMMENT_KEY()} ) && $surgery_field_cells{SURGERY_COMMENT_KEY()}->value() ne "" ) {
+        $insert_biopsy_event_cmd .= " --comment \"" . $surgery_field_cells{SURGERY_COMMENT_KEY()}->value() . "\"";
+    }
+
+    if( $debug ) {  
+        print "\nCreate biopsy event....\n\n";
+        print "    COMMAND TO EXECUTE: $insert_biopsy_event_cmd\n\n";
+    } else {
+        if ( system($insert_biopsy_event_cmd) ) {
+            print "EXECUTING: $insert_biopsy_event_cmd\n"; 
+            exit_with_error("ERROR: could not insert biopsy event into DB. \n\n");
+        }
+    }
+   
+    #Now let's add the tissue samples: 
+    foreach $sample (@tissue_samples) {
+        my $insert_tissue_sample_cmd = "insert_tissue_sample";
+        if ( $script =~ m/\.dev$/ ) {
+            $insert_tissue_sample_cmd .= ".dev";
+        }
+        $insert_tissue_sample_cmd .= " --sf_num " . $surgery_field_cells{SF_KEY()}->value();
+        $insert_tissue_sample_cmd .= " --vial_num " . $sample->{VIAL_KEY()}->value();
+        $insert_tissue_sample_cmd .= " --vial_color " . uc($sample->{COLOR_KEY()}->value());
+        if( defined( $sample->{T1C_LR_KEY()} ) && $sample->{T1C_LR_KEY()}->value() ne "" ) {
+            $insert_tissue_sample_cmd .= " --vial_L_pos \"" . $sample->{T1C_LR_KEY()}->value() . "\"";
+        }
+        if( defined( $sample->{T1C_PA_KEY()} ) && $sample->{T1C_PA_KEY()}->value() ne "" ) {
+            $insert_tissue_sample_cmd .= " --vial_P_pos \"" . $sample->{T1C_PA_KEY()}->value() . "\"";
+        }
+        if( defined( $sample->{T1C_SI_KEY()} ) && $sample->{T1C_SI_KEY()}->value() ne "" ) {
+            $insert_tissue_sample_cmd .= " --vial_S_pos \"" . $sample->{T1C_SI_KEY()}->value() . "\"";
+        }
+        if( $debug ) {
+            print "\nInsert sample...\n";
+            print "    COMMAND TO EXECUTE: $insert_tissue_sample_cmd\n";
+        } else {
+            if ( system($insert_tissue_sample_cmd) ) {
+                print "EXECUTING: $insert_tissue_sample_cmd\n"; 
+                exit_with_error("ERROR:  could not insert tissue sample into DB. \n\n");
+            }
+
+        }
+        # Let's update the Basis For Tissue Selection.
+        if( defined($sample->{BASIS_KEY()}) && $sample->{BASIS_KEY()} ne "" ) {
+            if( $debug ) {
+                print "    FUNCTION TO EXECUTE: dbutils_update_basis_for_tissue_selection(\'";
+                print $sample->{VIAL_KEY()}->value() . "\',\'" . $sample->{BASIS_KEY()} . "\')\n";
+            } else {
+                my $vial_num = $sample->{VIAL_KEY()}->value();
+                #   make sure that standard vialID has upper case b:
+                if ($vial_num =~ m/\d{1,2}[Bb]\d{2}/ ) {
+                    $vial_num =~ tr/b/B/;
+                }
+                #   make sure that standard vialID does not have leading zero:
+                if ($vial_num =~ m/\d{2}[Bb]\d{2}/ ) {
+                    $vial_num =~ s/^0(.*)/$1/;
+                }
+
+                if ( BRAIN_DB_UTILS::dbutils_update_basis_for_tissue_selection($vial_num, $sample->{BASIS_KEY()}) != 0 ) {
+                    exit_with_error("ERROR:  Could not update Basis For Tissue Selection field. \n\n");
+                }
+            }
+        }
+    }
+
+    print "======================================================================\n";
+
+}
+
+
+###############################################################################
+#
+# This method prints everything that has been read from the spreadsheet.
+#
+###############################################################################
+sub print_summary() {
+
+    print "======================================================================\n";
+    print "SUMMARY:\n\n";
+    print "    " . SURGERY_DATE_KEY . " = <" . $surgery_field_cells{SURGERY_DATE_KEY()}->value() . ">\n";
+    print "    " . T_NUMBER_KEY     . " = <" . $surgery_field_cells{T_NUMBER_KEY()}->value() . ">\n";
+    print "    " . B_NUMBER_KEY     . " = <" . $surgery_field_cells{B_NUMBER_KEY()}->value() . ">\n";
+    print "    " . SURGEON_KEY      . " = <" . $surgery_field_cells{SURGEON_KEY()}->value() . ">\n";
+    print "    " . SF_KEY           . " = <" . $surgery_field_cells{SF_KEY()}->value() . ">\n";
+    print "    " . SP_KEY           . " = <" . $surgery_field_cells{SP_KEY()}->value() . ">\n";
+    print "    " . STUDY_KEY        . " = <" . $surgery_field_cells{STUDY_KEY()}->value() . ">\n";
+    if( defined( $surgery_field_cells{SURGERY_COMMENT_KEY()} ) && $surgery_field_cells{SURGERY_COMMENT_KEY()}->value() ne "" ) {
+        print "    " . SURGERY_COMMENT_KEY . " = <" . $surgery_field_cells{SURGERY_COMMENT_KEY()}->value() . ">\n";
+    }
+    print "\n    SAMPLES:\n";
+    print "\n        --------------------------------------\n";
+    my $sample;
+    foreach $sample (@tissue_samples) {
+        print "        " . COLOR_KEY  . " = <" . $sample->{COLOR_KEY()}->value()  . ">\n";
+        print "        " . ORDER_KEY  . " = <" . $sample->{ORDER_KEY()}->value()  . ">\n";
+        print "        " . VIAL_KEY   . " = <" . $sample->{VIAL_KEY()}->value()   . ">\n";
+        if( defined( $sample->{T1C_LR_KEY()} ) ) {
+            print "        " . T1C_LR_KEY . " = <" . $sample->{T1C_LR_KEY()}->value() . ">\n";
+        }
+        if( defined( $sample->{T1C_PA_KEY()} ) ) {
+            print "        " . T1C_PA_KEY . " = <" . $sample->{T1C_PA_KEY()}->value() . ">\n";
+        }
+        if( defined( $sample->{T1C_SI_KEY()} ) ) {
+            print "        " . T1C_SI_KEY . " = <" . $sample->{T1C_SI_KEY()}->value() . ">\n";
+        }
+        if( defined( $sample->{BASIS_KEY()} ) ) {
+            print "        " . BASIS_KEY . " = <" . $sample->{BASIS_KEY()} . ">\n";
+        }
+        print "        ---------------------------------------\n";
+    }
+    print "======================================================================\n";
+}
+
+sub parse_or_checklist() {
+
+    my $parser   = Spreadsheet::ParseExcel->new();
+
+    my $fname = $spreadsheet_name; 
+    if( $debug ) {
+        print "\nParsing $fname...\n";
+    }
+    my $workbook = $parser->parse($fname);
+
+    if ( !defined($workbook) ) {
+        exit_with_error($parser->error());
+    }
+
+    my ($sf_num_cell, $surgery_date_cell, $t_number_cell, $b_number_cell, $surgeon_cell, $sp_number_cell, $study_cell); 
+
+    my @worksheets = $workbook->worksheets();
+    if( @worksheets != 1 ) {
+        exit_with_error("ERROR: More than one worksheet found!\n");
+    }
+
+    my $worksheet = $worksheets[0];
+
+    my $worksheet_name = $worksheet->get_name(); 
+
+    if($worksheet_name ne "OR Tissue Checklist") {
+        exit_with_error("ERROR: Validation failure, worksheet name must be \"OR Tissue Checklist\".\n");
+    }
+
+        
+    my ( $row_min_index, $row_max_index ) = $worksheet->row_range();
+    my ( $col_min_index, $col_max_index ) = $worksheet->col_range();
+    # There should be at least 6 columns
+    if( $col_max_index + 1 < 6 ) {
+        exit_with_error("ERROR: Not the correct number of columns, there should be at least 6 columns.\n");
+    }
+
+    #   get_surgery_date:
+    $surgery_field_cells{SURGERY_DATE_KEY()} = get_cell_for_surgery_key(SURGERY_DATE_KEY, $worksheet);
+    if( !defined(  $surgery_field_cells{SURGERY_DATE_KEY()} ) ){
+        exit_with_error("Could not validate " . SURGERY_DATE_KEY . "\n");
+    }
+
+    #  get t number:
+    $surgery_field_cells{T_NUMBER_KEY()} = get_cell_for_surgery_key(T_NUMBER_KEY, $worksheet);
+    if( !defined( $surgery_field_cells{T_NUMBER_KEY()}   ) ){
+        exit_with_error("Could not validate " . T_NUMBER_KEY . "\n");
+    }
+
+    #  get b number:
+    $surgery_field_cells{B_NUMBER_KEY()} = get_cell_for_surgery_key(B_NUMBER_KEY, $worksheet);
+    if( !defined( $surgery_field_cells{B_NUMBER_KEY()}   ) ){
+        exit_with_error("Could not validate " . B_NUMBER_KEY . "\n");
+    }
+
+    #  get surgeon:
+    $surgery_field_cells{SURGEON_KEY()} = get_cell_for_surgery_key(SURGEON_KEY, $worksheet);
+    if( !defined( $surgery_field_cells{SURGEON_KEY()}   ) ){
+        exit_with_error("Could not validate " . SURGEON_KEY . "\n");
+    }
+
+    #  get sf number:
+    $surgery_field_cells{SF_KEY()} = get_cell_for_surgery_key(SF_KEY, $worksheet);
+    if( !defined( $surgery_field_cells{SF_KEY()}   ) ){
+        exit_with_error("Could not validate " . SF_KEY . "\n");
+    }
+
+    #  get sp number:
+    $surgery_field_cells{SP_KEY()} = get_cell_for_surgery_key(SP_KEY, $worksheet);
+    if( !defined( $surgery_field_cells{SP_KEY()}   ) ){
+        exit_with_error("Could not validate " . SP_KEY . "\n");
+    }
+
+    #  get the study:
+    $surgery_field_cells{STUDY_KEY()} = get_cell_for_surgery_key(STUDY_KEY, $worksheet);
+    if( !defined( $surgery_field_cells{STUDY_KEY()}   ) ){
+        exit_with_error("Could not validate " . STUDY_KEY . "\n");
+    }
+
+    # Get any surgery comments
+    $surgery_field_cells{SURGERY_COMMENT_KEY()} = get_cell_for_surgery_key(SURGERY_COMMENT_KEY, $worksheet);
+    if( !defined( $surgery_field_cells{SURGERY_COMMENT_KEY()} ) ||  $surgery_field_cells{SURGERY_COMMENT_KEY()}->value() eq "" ) {
+        delete $surgery_field_cells{SURGERY_COMMENT_KEY()};
+    }
+
+    $basis_for_selection_offset = -1;
+
+    # Find the basis for selection for tissue selection section
+    for (my $row = $first_tissue_row; $row < $row_max_index; $row++) {
+        my $basis_heading_cell = $worksheet->get_cell($row,0);
+        if ( defined($basis_heading_cell) ) {
+            if ( $basis_heading_cell->value() eq BASIS_KEY() ) {
+
+                # The first basis row is two rows after the heading
+                $basis_for_selection_offset = ($row + 2) - $first_tissue_row;
+            }
+        }
+    }
+
+    # The offset should be at least four rows, this is the case of zero samples 
+    if( $basis_for_selection_offset < 4 ) {
+        exit_with_error("Could not locate Basis For Tissue Selection section!\n");
+    }
+
+    # This is the enforced formatting. Four rows represent the two headings and two empty rows.
+    my $number_of_samples = $basis_for_selection_offset - 4;
+    if( $debug ) { 
+            print "First Tissue Row  : " . ($first_tissue_row + 1)  . "\n";
+            print "First Basis Row   : " . ($first_tissue_row + 1 + $basis_for_selection_offset) . "\n";
+            print "Number of Samples : " . $number_of_samples . "\n";
+            print "Last Row Index    : " . $row_max_index . "\n";
+    }
+    if( $row_max_index != $first_tissue_row + $basis_for_selection_offset + $number_of_samples - 1 ) {
+        exit_with_error("Incorrect number of rows! Check to ensure that each color is listed in the Tissue Samples and Basis For Tissue Selection and that there are no extraneous rows in the spreadsheet.\n");
+    }
+
+    for (my $tissue_number = 0; $tissue_number < $number_of_samples; $tissue_number++) {
+        my %tissue_field_cells = ();
+        $tissue_field_cells{VIAL_KEY()} = get_cell_for_tissue_key(VIAL_KEY, $worksheet, $tissue_number);
+        $tissue_field_cells{COLOR_KEY()} = get_cell_for_tissue_key(COLOR_KEY, $worksheet, $tissue_number);
+        if( !defined( $tissue_field_cells{VIAL_KEY()}) || !defined($tissue_field_cells{VIAL_KEY()}->value()) || $tissue_field_cells{VIAL_KEY()}->value() eq "" ) {
+            print "WARNING: Skipping " . $tissue_field_cells{COLOR_KEY()}->value()  . " sample. No Vial # Present.\n";
+            next;
+        }
+        $tissue_field_cells{ORDER_KEY()} = get_cell_for_tissue_key(ORDER_KEY, $worksheet, $tissue_number);
+        $tissue_field_cells{T1C_LR_KEY()} = get_cell_for_tissue_key(T1C_LR_KEY, $worksheet, $tissue_number);
+        $tissue_field_cells{T1C_PA_KEY()} = get_cell_for_tissue_key(T1C_PA_KEY, $worksheet, $tissue_number);
+        $tissue_field_cells{T1C_SI_KEY()} = get_cell_for_tissue_key(T1C_SI_KEY, $worksheet, $tissue_number);
+        $tissue_field_cells{BASIS_KEY()} = get_basis_for_tissue_selection( $worksheet, $tissue_number);
+        if( !defined($tissue_field_cells{VIAL_KEY()} ) || $tissue_field_cells{VIAL_KEY()}->value() eq "" 
+            || !defined($tissue_field_cells{COLOR_KEY()} ) || $tissue_field_cells{COLOR_KEY()}->value() eq "" ) {
+            # If the tissue is not completed exit with error.
+            exit_with_error("Incomplete sample in row " . ($first_tissue_row + $tissue_number + 1) . ". Please remove this row or complete it.\n");
+        }
+        push(@tissue_samples, \%tissue_field_cells );
+
+    }
+}
+
+
+#
+# Get surgery related field for given key
+#
+sub get_cell_for_surgery_key($$) {
+    my($key, $worksheet) = @_;
+    my($cell_for_key, $heading_cell, $value_cell);
+    my $heading_valid = 0;
+    if( $key eq SURGERY_DATE_KEY  ) {
+        $heading_cell = $worksheet->get_cell(3,0);
+        $value_cell   = $worksheet->get_cell(3,1);
+        if( defined($heading_cell) && $heading_cell->value() eq SURGERY_DATE_KEY ) { 
+            $heading_valid = 1;
+            if( defined($value_cell) && BRAIN_DB_UTILS::dbutils_is_date_valid($value_cell->value(), 0) ) { 
+                $cell_for_key = $value_cell;
+            } else {
+                print "ERROR: Study date is not valid! Must use notation YYYY-DD-MM\n";
+            }
+        }
+    } elsif( $key eq T_NUMBER_KEY  ) {
+        $heading_cell = $worksheet->get_cell(4,0);
+        $value_cell   = $worksheet->get_cell(4,1);
+        if( defined($heading_cell) && $heading_cell->value() eq T_NUMBER_KEY ) { 
+            $heading_valid = 1;
+            if( defined($value_cell) && $value_cell->value() =~ /^\d+$/ ) { 
+                $cell_for_key = $value_cell;
+            } else {
+                print "ERROR: T number is not valid!\n";
+            }
+        }
+    } elsif( $key eq B_NUMBER_KEY  ) {
+        $heading_cell = $worksheet->get_cell(5,0);
+        $value_cell   = $worksheet->get_cell(5,1);
+        if( defined($heading_cell) && $heading_cell->value() eq B_NUMBER_KEY ) { 
+            $heading_valid = 1;
+            if( defined($value_cell) && $value_cell->value() =~ /^\d+$/ ) { 
+                $cell_for_key = $value_cell;
+            } else {
+                print "ERROR: B number is not valid!\n";
+            }
+        }
+    } elsif( $key eq SURGEON_KEY  ) {
+        $heading_cell = $worksheet->get_cell(6,0);
+        $value_cell   = $worksheet->get_cell(6,1);
+        if( defined($heading_cell) && $heading_cell->value() eq SURGEON_KEY ) { 
+            $heading_valid = 1;
+            if( defined($value_cell) && $value_cell->value() ne "" ) { 
+                my $is_valid = BRAIN_DB_UTILS::dbutils_validate_enumerated_value( "dst04830344643658594208_surgery_events",
+                                                                  "dc_08416117913895648296_surgeon_def_ref",
+                                                                   $value_cell->value());
+                if( $is_valid == 1 ) {
+                    $cell_for_key = $value_cell;
+                } else {
+                    print "ERROR: Surgeon \"" . $value_cell->value() . "\" is not in the database.\n";
+                }
+            } else {
+                print "ERROR: Surgeon is not valid!\n";
+            }
+        }
+    } elsif( $key eq SF_KEY  ) {
+        $heading_cell = $worksheet->get_cell(7,0);
+        $value_cell   = $worksheet->get_cell(7,1);
+        if( defined($heading_cell) && $heading_cell->value() eq SF_KEY ) { 
+            $heading_valid = 1;
+            if( defined($value_cell) && $value_cell->value() =~ /^\d+$/  ) { 
+                $cell_for_key = $value_cell;
+            } else {
+                print "ERROR: SF number is not valid!\n";
+            }
+        } 
+    } elsif( $key eq SP_KEY  ) {
+        $heading_cell = $worksheet->get_cell(8,0);
+        $value_cell   = $worksheet->get_cell(8,1);
+        if( defined($heading_cell) && $heading_cell->value() eq SP_KEY ) { 
+            $heading_valid = 1;
+            if( (defined($value_cell) && !($value_cell->value()=~/.*\s+.*$/)) || $value_cell->value() eq "" ) { 
+                $cell_for_key = $value_cell;
+            } else {
+                print "ERROR: SP number is not valid! Make sure there are no spaces present.\n";
+            }
+        }
+    } elsif( $key eq STUDY_KEY  ) {
+        $heading_cell = $worksheet->get_cell(9,0);
+        $value_cell   = $worksheet->get_cell(9,1);
+        if( defined($heading_cell) && $heading_cell->value() eq STUDY_KEY ) { 
+            $heading_valid = 1;
+            if( defined($value_cell) && $value_cell->value() ne "" ) { 
+                my $is_valid = BRAIN_DB_UTILS::dbutils_validate_enumerated_value( "dst04647906760085682354_study_status",
+                                                                  "dc_08228824059844609070_study_tag_def_ref",
+                                                                   $value_cell->value());
+                if( $is_valid == 1 ) {
+                    $cell_for_key = $value_cell;
+                } else {
+                    print "ERROR: Study tag \"" . $value_cell->value() . "\" is not in the database.\n";
+                }
+            } else {
+                print "ERROR: Study is not valid!\n";
+            }
+        } 
+    } elsif( $key eq SURGERY_COMMENT_KEY  ) {
+        $heading_cell = $worksheet->get_cell(10,0);
+        $value_cell   = $worksheet->get_cell(10,1);
+        if( defined($heading_cell) && $heading_cell->value() eq SURGERY_COMMENT_KEY ) { 
+            $heading_valid = 1;
+            if( defined($value_cell) ) { 
+                $cell_for_key = $value_cell;
+            } else {
+                print "ERROR: Comment is not valid!\n";
+            }
+        } 
+    } 
+
+    if( !$heading_valid ) {
+        print "ERROR: Could not find field heading \"$key\".\n";
+    }
+
+    if( !defined($cell_for_key) ){
+        print "ERROR: Could not validate cell for $key!\n";
+    } elsif( $debug ) { 
+        print "Found Cell <$key>=<" . $cell_for_key->value() . ">\n";
+    }
+    return $cell_for_key;
+
+}
+
+
+#
+# Get a cell for a tissue entry.
+#
+sub get_cell_for_tissue_key($$$) {
+    my($key, $worksheet, $tissue_number) = @_;
+    my($cell_for_key, $heading_cell, $value_cell);
+    my $heading_valid = 0;
+
+    # first_tissue_row is a global variable
+    my $tissue_row = $first_tissue_row + $tissue_number;
+    if( $key eq COLOR_KEY  ) {
+        $heading_cell = $worksheet->get_cell( $first_tissue_row - 1, 0 );
+        $value_cell   = $worksheet->get_cell( $tissue_row, 0 );
+        if( defined($heading_cell) && $heading_cell->value() eq COLOR_KEY ) { 
+            $heading_valid = 1;
+            if( defined($value_cell) && $value_cell->value() ne "" ) { 
+                my $is_valid = BRAIN_DB_UTILS::dbutils_validate_enumerated_value( "dst06790500864179852875_research_tissue_samples",
+                                                                  "dc_05084740520784791279_vial_label_color_def_ref",
+                                                                   uc($value_cell->value()));
+                if( $is_valid == 1 ) {
+                    $cell_for_key = $value_cell;
+                } else {
+                    print "ERROR: Color \"" . $value_cell->value() . "\" is not a valid identifier in the database.\n";
+                }
+            } else {
+                print "ERROR: Color is not valid!\n";
+            }
+        }
+    } elsif( $key eq ORDER_KEY  ) {
+        $heading_cell = $worksheet->get_cell($first_tissue_row - 1,1);
+        $value_cell   = $worksheet->get_cell($tissue_row, 1);
+        if( defined($heading_cell) && $heading_cell->value() eq ORDER_KEY ) { 
+            $heading_valid = 1;
+            if( defined($value_cell) && ($value_cell->value() =~ /^\d+$/ || $value_cell->value() eq "") ) { 
+                $cell_for_key = $value_cell;
+            } else {
+                print "ERROR: Order number is not valid!\n";
+            }
+        }
+    } elsif( $key eq VIAL_KEY ) {
+        $heading_cell = $worksheet->get_cell($first_tissue_row - 1,2);
+        $value_cell   = $worksheet->get_cell($tissue_row, 2);
+        if( defined($heading_cell) && $heading_cell->value() eq VIAL_KEY ) { 
+            $heading_valid = 1;
+            if( defined($value_cell) && !($value_cell->value()=~/.*\s+.*$/) ) { 
+                $cell_for_key = $value_cell;
+            } else {
+                print "ERROR: Vial number is not valid! Make sure there are no spaces in it.\n";
+            }
+        }
+    } elsif( $key eq T1C_LR_KEY ) {
+        $heading_cell = $worksheet->get_cell($first_tissue_row - 1,3);
+        $value_cell   = $worksheet->get_cell($tissue_row, 3);
+        if( defined($heading_cell) && $heading_cell->value() eq T1C_LR_KEY ) { 
+            $heading_valid = 1;
+            if( defined($value_cell) && ( $value_cell->value() eq "" || looks_like_number($value_cell->value()) != 0 )) { 
+                $cell_for_key = $value_cell;
+            } else {
+                print "ERROR: T1C_LR_KEY number is not valid!\n";
+            }
+        }
+    } elsif( $key eq T1C_PA_KEY ) {
+        $heading_cell = $worksheet->get_cell($first_tissue_row - 1,4);
+        $value_cell   = $worksheet->get_cell($tissue_row, 4);
+        if( defined($heading_cell) && $heading_cell->value() eq T1C_PA_KEY ) { 
+            $heading_valid = 1;
+            if( defined($value_cell) && ( $value_cell->value() eq "" || looks_like_number($value_cell->value()) != 0 )) { 
+                $cell_for_key = $value_cell;
+            } else {
+                print "ERROR: T1C_PA_KEY number is not valid!\n";
+            }
+        }
+    } elsif( $key eq T1C_SI_KEY ) {
+        $heading_cell = $worksheet->get_cell($first_tissue_row - 1,5);
+        $value_cell   = $worksheet->get_cell($tissue_row, 5);
+        if( defined($heading_cell) && $heading_cell->value() eq T1C_SI_KEY ) { 
+            $heading_valid = 1;
+            if( defined($value_cell) &&  ( $value_cell->value() eq "" || looks_like_number($value_cell->value()) != 0 )) { 
+                $cell_for_key = $value_cell;
+            } else {
+                print "ERROR: T1C_SI_KEY number is not valid!\n";
+            }
+        }
+    } 
+
+    if( !$heading_valid ) {
+        exit_with_error("\nERROR: Could not find field heading \"$key\".\n\n");
+    }
+
+    if( $key && !defined($cell_for_key) ){
+        print "\nERROR: Could not validate cell for $key for tissue number $tissue_number!\n\n";
+    } elsif( $debug ) { 
+        print "Found Cell <$key>=<" . $cell_for_key->value() . "> for tissue number $tissue_number\n";
+    }
+
+    return $cell_for_key;
+
+}
+
+
+#
+# Extract a comma seperated list of values for the basis for tissue selection field
+#
+sub get_basis_for_tissue_selection($$) {
+    my($worksheet, $tissue_number) = @_;
+    my($heading_cell);
+    my $heading_valid = 0;
+
+    my $tissue_row = $first_tissue_row + $tissue_number;
+    my $basis_used_row = $first_tissue_row + $tissue_number + $basis_for_selection_offset;
+    my $basis_heading_row = $first_tissue_row + $basis_for_selection_offset - 1;
+
+    # First we need to check that the tissue and basis rows color's match
+    if( !defined($worksheet->get_cell($tissue_row, 0))
+     || !defined($worksheet->get_cell($basis_used_row, 0))
+     || $worksheet->get_cell($tissue_row, 0)->value() ne $worksheet->get_cell($basis_used_row, 0)->value()){
+        print "\nTissue row color: " .  $worksheet->get_cell($tissue_row, 0)->value() . "\n";
+        print "Basis  row color: " .  $worksheet->get_cell($basis_used_row, 0)->value() . "\n";
+        exit_with_error("ERROR: Color does not match Basis For Tissue Selection for tissue #" . ($tissue_number + 1) . ".\n\n");
+    } 
+
+    # We are going to loop over all columns
+    my ( $col_min_index, $col_max_index ) = $worksheet->col_range();
+
+    # By default no selection
+    my $basis_for_selection = ""; 
+    for (my $column = 1; $column <= $col_max_index; $column++) {
+        my $heading_cell = $worksheet->get_cell($basis_heading_row, $column);
+        my $basis_cell   = $worksheet->get_cell($basis_used_row, $column);
+        if( !defined($heading_cell) ) {
+            exit_with_error("\nERROR: Basis for Tissue Selection is not defined for column #" . ($column + 1) . ".\n\n");
+        }
+
+        if( defined($basis_cell) ) {
+            if( uc($basis_cell->value()) eq 'X') {
+            
+                # Prepend a semi-colon if this is not the first value
+                if( $basis_for_selection ne "" ) {
+                    $basis_for_selection .= ";";
+                } 
+                $basis_for_selection .= $heading_cell->value();
+            } elsif ( $basis_cell->value() ne "" ) {
+                exit_with_error("\nERROR: Please use an \'x\' to mark Basis For Tissue Selection for tissue #" . ($tissue_number + 1) . ".\n\n");
+            }
+        }
+    }
+
+    return $basis_for_selection;
+}
+
+
+#
+# Exit with an error message.
+# 
+sub exit_with_error($) {
+    my ($error) = @_;
+    print "\n\nERROR: Could not upload due to error -> $error\n\nRun again with -D for more information.\n\n";
+    exit(1);
+}
+
+
+#
+# Exit with a success message.
+# 
+sub exit_with_success() {
+    if( $debug ) {
+        print "\nNo errors encountered! Data upload not attempted due to debug flag.\n\n";
+    } elsif( $print_summary ) {
+        print "\nNo errors encountered! Data upload not attempted due to print summary flag.\n\n";
+    } else {
+        print "\nCongratulations you have uploaded $spreadsheet_name to Cerebro!\n\n"
+    }
+    exit(0);
+}
+
+
+###############################################################################
+#
+#   POD Usage docs
+#
+###############################################################################
+
+=head1 NAME
+
+    upload_or_tissue_checklist
+
+=head1 SYNOPSIS
+
+    upload_or_tissue_checklist --xl excel_report.xls
+
+        --xl    spreadsheet_name    path to spreadsheet to upload. 
+        -p                          Just print summary and DO NOT UPLOAD.
+        -D                          Print debugging messages and DO NOT UPLOAD.
+        -h                          Print help message. 
+
+=head1 DESCRIPTION
+
+A program to read an OR Tissue Checklist Spreadsheet, parse it and upload its
+info to Cerebro.
+
+NOTE: This program must be run from an sf directory (inside b/t directory).
+
+=cut
+

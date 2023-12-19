@@ -1,0 +1,153 @@
+#!/usr/bin/perl 
+#
+#   $URL: https://intrarad.ucsf.edu/svn/rad_software/surbeck/brain/vtk_registration/trunk/vtknreg_grid $
+#   $Rev: 26630 $
+#   $Author: jasonc@RADIOLOGY.UCSF.EDU $
+#   $Date: 2012-10-23 11:28:21 -0700 (Tue, 23 Oct 2012) $
+#
+
+use Cwd;
+use Pod::Usage;
+use CLUSTER;
+use MRSC_CSI_v6;
+use Getopt::Long;
+
+
+
+#
+#   log the job:
+#
+$script    = $0;
+@args = @ARGV;
+$data_dir  = getcwd();
+csi_set_parent_dir($data_dir);
+csi_log_start($script, @args);
+
+GetOptions(
+    "g=s"   => \$grid,
+    "h"     => \$help
+) or pod2usage(-verbose=>2, -exitval=>2);
+
+@args = @ARGV;
+
+if ( !defined $grid || $help ) {
+    pod2usage(-verbose=>2, -exitval=>2);
+} 
+
+$grid = lc($grid); 
+if ( $grid ne "qb3" && $grid ne "rad") {
+    pod2usage(-verbose=>2, -exitval=>2);
+} 
+
+
+$num_args = @args; 
+if ($num_args == 0) { 
+  print "\n--------------------------------------------------------------\n";
+  print "ERROR: No args specified for vtknreg.x \n"; 
+  print "--------------------------------------------------------------\n"; 
+  print "vtknreg.x @args\n\n"; 
+  exit (1); 
+} 
+
+
+#
+#   Create and execute grid job:
+#
+clusterSetGridEnv( $grid );
+clusterClear();
+clusterCreateJobScript( "qsub_vtknreg" );
+setJobReqs();
+clusterSetNumTasks( 1 );
+$cmd; 
+
+@getLibs = ( "/usr/lib/libGLU.so.1", "/netopt/lib/libtcl8.4.so", "/netopt/lib/libtk8.4.so" ); 
+@rmLibs = ( "./libGLU.so.1", "./libtcl8.4.so", "./libtk8.4.so" ); 
+
+if ( $grid eq "rad" ) {
+    $cmd = "/netopt/share/bin/local/brain/vtknreg @args";
+} else {
+    
+    #   need to copy over libGLU.so required for 32 bit execution on QB3 cluster. 
+    foreach $lib (@getLibs) { 
+        $getLib = "cp $lib ."; 
+        system( "$getLib" ); 
+    }
+
+    foreach $lib (@rmLibs) { 
+        system( "chmod 777 $lib" ); 
+    }
+
+    #   need to set environment to find vtk, CISG and GL libs
+    $cmd  = "setenv LD_LIBRARY_PATH /data/lib/local/brain/VTK40/lib/vtk/:/data/bin/local/brain/vtkCISG/lib/:.\n\n";
+    $cmd .= "/data/share/bin/local/brain/vtknreg @args";
+}
+
+clusterAddJobCommand( "${cmd}" );
+clusterWriteJobScript();
+clusterSubmitToGrid();
+
+
+if ( $grid eq "qb3" ) {
+
+    #   clean up local copies of libs 
+    foreach $lib (@rmLibs) { 
+        $rmLib = "rm $lib";
+        system( "$rmLib" );
+
+    }
+
+}
+
+
+
+###############################################################################
+#   subroutines
+###############################################################################
+
+
+#
+#   Print the common job requirements for all
+#   scripts in pipeline.
+#
+sub setJobReqs()
+{
+
+    if ( $grid eq "rad" ) {
+        clusterAddQueue( "brain.q"  );
+    } elsif ($grid eq "qb3") {
+        clusterAddJobRequirement( "-l mf=2G" );
+        clusterAddJobRequirement( "-l arch=linux-x64" );
+        clusterAddJobRequirement( "-l h_rt=24:00:0" );
+    }
+    clusterAddJobRequirement( "-N vtknreg" );
+    clusterAddJobRequirement( "-cwd" );
+    clusterAddJobRequirement( "-sync y" );
+    clusterAddJobRequirement( "-V" );
+
+    return;
+}
+
+
+    
+
+
+###############################################################################
+#
+#   POD Usage docs
+#
+###############################################################################
+
+
+=head1 NAME
+
+vtknreg_grid
+
+=head1 SYNOPSIS
+
+    vtknreg_grid -g grid [ -h ] args
+        -g  grid    grid to use (qb3 or rad) 
+        -h          print this help text.
+
+        Args are the inputs passed through to vtknreg. 
+
+=cut

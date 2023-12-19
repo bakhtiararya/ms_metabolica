@@ -1,0 +1,270 @@
+#!/usr/bin/perl -w
+#
+#   $URL: https://intrarad.ucsf.edu/svn/rad_software/surbeck/brain/MRS/trunk/voxel_fraction_quant/voxel_fraction $
+#   $Rev: 20444 $
+#   $Author: ozh@RADIOLOGY.UCSF.EDU $
+#   $Date: 2011-03-31 17:02:31 -0700 (Thu, 31 Mar 2011) $
+#
+#   MRSI PROCESSING
+#   1.  signa_csi with option that adds sat bands 
+#   2.  for lactate edited data generate sum and dif files
+#   3.  process spec data
+#   4.  phase_spec
+#   5.  combine_spec with square root values
+#   6.  csi_image to get metabolite images
+#   
+#   FURTHER DEVELOPMENT NEEDED
+#   7.  correct metabolite images for chemical shift and/or non-uniform image intensity 
+#   8.  alignment and implementation of the corrections for that case
+#
+
+use MRSC_CSI_v6;
+use MRSCUtil_v6;
+use Cwd;
+use Cwd 'abs_path';
+use strict;
+use Getopt::Long;
+use Pod::Usage;
+Getopt::Long::config("bundling");
+
+
+my $mask;
+my $root;
+my $output;
+my @orig_args = @ARGV;    
+my $case_type = '';
+my $magn = 0;
+
+GetOptions(
+        "mask=s"             => \$mask,
+        "output=s"           => \$output,
+        "c=s"                => \$case_type,
+        "magn"               => \$magn       
+) or pod2usage(-verbose=>2, -exitval=>2); 
+
+if ($#ARGV != 0) {
+    pod2usage(-verbose=>2, -exitval=>2);
+} else {
+    $root = $ARGV[0];
+}
+
+if(!defined $output){
+    $output = "${root}_test";
+}
+
+my $script    = $0;
+my $data_dir  = getcwd();
+$data_dir  =~ s/(.*)\/spectra$/$1/;
+csi_set_parent_dir($data_dir);
+
+    
+my $log_file = "voxel_fraction.log";
+print "\nvoxel_fraction:  output written to $log_file \n";
+
+
+my ${arg1};
+if($case_type eq 'l') {
+    ${arg1} = "${root}_fbcomb_phased_sum_cp"; # input_root
+} else {
+    ${arg1} = "${root}_fbcomb_phased_cp"; # input_root
+}
+my ${arg2} = "$root";       # output_mask_root
+my ${arg3} = "${root}_fb";  # peak_file_root
+my ${arg4} = "$root";       # output_spectra_root
+
+
+print "${arg1}, ${arg2}, ${arg3}, ${arg4} \n";
+
+
+#
+#   Log 
+#
+csi_log_start($script, @orig_args);
+csi_set_parent_dir($data_dir);
+
+
+#
+#   SELECTED VOLUME PARAMETERS: No chemical shift
+#
+
+print "\n\nrunning press_3dprofile_v6.dev. input: ${arg1}.ddf  output: ${arg2}_press ...\n";
+
+my $program = "press_3dprofile_v6.dev";
+my $input; 
+$input  = "${arg1}.ddf \n";
+$input .= "1 1 1 \n";
+$input .= "8 8 8 \n"; 
+$input .= "3 \n"; 
+$input .= "100 1.0 \n"; 
+$input .= "1.5 1.5 1.5 \n"; 
+$input .= "${arg2}_press \n"; 
+$input .= "s  \n"; 
+
+open(PRO, "|$program ") || die "could not open job $program: $!";
+print PRO "${input} ";  
+close(PRO);
+if ($?) {
+    print "ERROR(voxel_fraction): $program \n";
+    exit(1);
+}
+print "\n$program successful. \n";
+
+
+
+
+print "\n\nrunning vss_3dprofile_v6.dev. input: ${arg1}.ddf  output: ${arg2}_vss ...\n";
+
+$program = "vss_3dprofile_v6.dev"; 
+
+$input  = "${arg1}.ddf \n";     # input file 
+$input .= "5 \n";               # box sats and ddf sats
+$input .= "100 \n";             # scale factor
+$input .= "1 1 1 \n";           # field of view multiplier  
+$input .= "8 8 8 \n";           # pixel size factor
+$input .= "40 0.9 \n";          # sat band width and effectiveness (box)
+$input .= "0.9 \n";             # sat band effectiveness (ddf)
+$input .= "${arg2}_vss \n";     # output root
+$input .= "s \n";               # scale factor stays the same
+
+open(PRO, "|$program ") || die "could not open job $program: $!";
+print PRO "${input} ";  
+close(PRO);
+if ($?) {
+    print "ERROR(voxel_fraction): $program \n";
+    exit(1);
+}
+print "\n$program successful. \n";
+
+
+
+#
+#
+#
+print "\n\nrunning correct_cshift_v6.dev. inputs: ${arg1}_press.int2, ${arg1}_vss.int2, ${arg1}.ddf output: ${arg2}_vox ...\n";
+$program = "correct_cshift_v6.dev"; 
+
+open(PRO, "|$program ") || die "could not open job $program: $!";
+
+if( defined $mask ) {
+
+    print "Using mask: $mask\n";
+
+    $input  = "${mask} \n";             #   
+    $input .= "n \n";                   # no image file
+    $input .= "${arg2}_press.int2 \n";  # press file
+    $input .= "${arg2}_vss.int2 \n";    # vss file
+    $input .= "${arg1}.ddf \n";         # ddf file name for resampling
+    $input .= "n \n";                   # elliptical sampling  
+    $input .= "n \n";                   #
+    $input .= "${arg2}_vox \n";         # output file root
+    $input .= "256 256 256 \n";         # output pixel dimensions
+    $input .= "s \n";                   # scale factor stays the same
+
+} else {
+
+    print "No mask specified\n";
+
+    $input  = "none \n"; 
+    $input .= "${arg2}_press.int2 \n";
+    $input .= "${arg2}_vss.int2 \n";
+    $input .= "${arg1}.ddf \n";
+    $input .= "n \n";
+    $input .= "n \n";
+    $input .= "${arg2}_vox \n";
+    $input .= "256 256 256 \n";
+    $input .= "s \n";
+}
+print PRO "${input} ";  
+close(PRO);
+if ($?) {
+    print "ERROR(voxel_fraction): $program \n";
+    exit(1);
+}
+print "\n$program successful. \n";
+
+
+
+#
+#   CALCULATE METABOLTE IMAGES: voxel weightfile
+#
+print "\n\nrunning csi_image_v6.dev. inputs: ${arg1}.cmplx, ${arg2}_vox.real, ${arg3}.peak output: $output, ${output}_cor.cmplx ...\n";
+
+$program = "csi_image_v6.dev"; 
+
+open(PRO, "|$program ") || die "could not open job $program: $!";
+
+    $input  = "${arg1}.cmplx \n";
+    $input .= "w \n";
+    $input .= "${arg2}_vox.real \n";
+    $input .= "0.5 \n";
+    
+    if($magn) {   
+        $input .= "t \n";
+    } else {
+        $input .= "r \n";
+        $input .= "2.5 \n";
+    }    
+    
+    $input .= "${output} \n";
+    $input .= "${arg3}.peak \n";
+    $input .= "21 \n";
+    $input .= "61 \n";
+    $input .= "0 5 \n";
+    $input .= "s \n";
+    $input .= "p \n";
+    $input .= "p \n";
+    $input .= "15 \n";
+    $input .= "n \n";
+    $input .= "p \n";
+    $input .= "18 \n";
+    $input .= "f \n";
+    $input .= "${output}_cor.cmplx \n";
+    $input .= "1 1 2 4 \n";
+    $input .= "0 1 0 0 0 \n";
+    $input .= "0 0 1 0 0 \n";
+
+print PRO "${input} ";  
+close(PRO);
+if ($?) {
+    print "ERROR(voxel_fraction): $program \n";
+    exit(1);
+}
+print "\n$program successful. \n";
+`mkdir ${output}_cor_met`;
+`mv ${output}*0*.real ${output}_cor_met/.`;
+`mv ${output}*0*.idf  ${output}_cor_met/.`;
+`mv ${output}*r*.real ${output}_cor_met/.`;
+`mv ${output}*r*.idf  ${output}_cor_met/.`;
+`mv ${output}*t*.real ${output}_cor_met/.`;
+`mv ${output}*t*.idf ${output}_cor_met/.`;
+`mv ${output}*.tab    ${output}_cor_met/.`;
+
+
+
+#
+#   Log 
+#
+csi_log_end($script, @orig_args);
+csi_set_parent_dir($data_dir);
+
+###############################################################################
+#
+#   POD Usage docs
+#
+###############################################################################
+
+=head1 NAME
+
+
+    voxel_fraction - re-quantifies spectral data in the region, defined by sat bands
+
+=head1 SYNOPSIS
+
+    voxel_fraction [ --mask image ] [ --output root ] [ -c case_type ] [--magn] rootname
+
+        --mask   image      quantify spectra only in the region, defined by mask
+        --output root       output rootname. default: rootname_test 
+        -c       case_type  Case type. Use "-c l" for lactate edited data.
+        --magn              quantify magnitude spectra
+        
+=cut

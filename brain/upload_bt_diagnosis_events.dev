@@ -1,0 +1,594 @@
+#!/usr/bin/perl -w
+
+#   $URL: https://intrarad.ucsf.edu/svn/rad_software/surbeck/brain/DB/nelson_ncvi/trunk/data_upload_qr_scripts/upload_bt_diagnosis_events $
+#   $Rev: 31671 $
+#   $Author: jasonc@RADIOLOGY.UCSF.EDU $
+#   $Date: 2014-05-21 10:02:56 -0700 (Wed, 21 May 2014) $
+#
+#   Specialized data upload script to parse OnCore "Neuro_Surgery_Report.xls" and upload clinical diagnosis data to 
+#   brain DB. 
+#
+
+use strict;
+use DBI;
+use DBD::Pg;
+use Getopt::Long;
+Getopt::Long::config("bundling");
+use Pod::Usage;
+use File::Spec;
+use Cwd;
+use Cwd 'abs_path';
+require SET_BRAIN_MODULES;
+use Spreadsheet::ParseExcel;
+
+sub print_row( $$$$$$$$$$$$$$$$$$$$$$$$ );
+sub update_subject_info( $$$$ );
+
+my $script    = $0;
+my ($t_num, $brain_id, $date, $subject_info_updated);
+our $dbh; 
+our $xl_row; 
+
+
+##########################
+#   Connect to DB:
+##########################
+BRAIN_DB::brain_db_set_env( $script );
+$dbh = BRAIN_DB::brain_db_get_connection();
+
+my $parser   = Spreadsheet::ParseExcel->new();
+#   format cells so date is:  YYYY-MM-DD
+my $fname = "Neuro_Surgery_Report.xls"; 
+my $workbook = $parser->parse($fname);
+
+if ( !defined $workbook ) {
+    die $parser->error(), ".\n";
+}
+
+
+for my $worksheet ( $workbook->worksheets() ) {
+
+    
+    my ( $row_min, $row_max ) = $worksheet->row_range();
+    my ( $col_min, $col_max ) = $worksheet->col_range();
+
+    # We know the first row is the title, and the second is the headings.
+    $row_min +=2; 
+
+    for $xl_row ( $row_min .. $row_max ) {
+
+        #   parse colums for: 
+        #       1(MRN)
+        #       7(Surgery Reason)
+        #       9(Diagnosis Date)
+        #       10(Diagnosis Type)
+        #       11(Surgery Date)
+        #       15(Institution Name)
+        #       16(Histological Type)
+        #       21(Histological Grade)
+        #       29(Tissue Obtained)
+        my $cell_protocol_num    = $worksheet->get_cell( $xl_row, 0 );
+        my $cell_mrn             = $worksheet->get_cell( $xl_row, 1 );
+        my $cell_birth_date      = $worksheet->get_cell( $xl_row, 5 );
+        my $cell_expired_date    = $worksheet->get_cell( $xl_row, 6 );
+        my $cell_surgery_reason  = $worksheet->get_cell( $xl_row, 7 );
+        my $cell_other_reason    = $worksheet->get_cell( $xl_row, 8 );
+        my $cell_diag_date       = $worksheet->get_cell( $xl_row, 9 );
+        my $cell_diag_type       = $worksheet->get_cell( $xl_row, 10 );
+        my $cell_surg_date       = $worksheet->get_cell( $xl_row, 11 );
+        my $cell_res_extent      = $worksheet->get_cell( $xl_row, 12 );
+        my $cell_other_extent    = $worksheet->get_cell( $xl_row, 13 );
+        my $cell_inst_name       = $worksheet->get_cell( $xl_row, 15 );
+        my $cell_hist_type       = $worksheet->get_cell( $xl_row, 16 );
+        my $cell_orig_diagnosis  = $worksheet->get_cell( $xl_row, 17 );
+        my $cell_other_type      = $worksheet->get_cell( $xl_row, 18 );
+        my $cell_side            = $worksheet->get_cell( $xl_row, 19 );
+        my $cell_multi_lesions   = $worksheet->get_cell( $xl_row, 20 );
+        my $cell_hist_grade      = $worksheet->get_cell( $xl_row, 21);
+        my $cell_lesion_site     = $worksheet->get_cell( $xl_row, 22);
+        my $cell_other_site      = $worksheet->get_cell( $xl_row, 23);
+        my $cell_sf_num          = $worksheet->get_cell( $xl_row, 24);
+        my $cell_sp_num          = $worksheet->get_cell( $xl_row, 25);
+
+
+        #   Protocol number
+        my $protocol_num;
+        if (defined $cell_protocol_num) {
+            $protocol_num = $cell_protocol_num->value(); 
+        }
+
+        #   MRN 
+        my $mrn = 0;
+        if (defined $cell_mrn) {
+            $mrn = $cell_mrn->value(); 
+        }
+
+        # birth date
+        my $birth_date;
+        if ( defined $cell_birth_date ) {
+            $birth_date = $cell_birth_date->value(); 
+        }
+
+        # expired date
+        my $expired_date;
+        if ( defined $cell_expired_date ) {
+            $expired_date = $cell_expired_date->value(); 
+        }
+
+        # surgery reason
+        my $surgery_reason;
+        if ( defined $cell_surgery_reason ) {
+            $surgery_reason = $cell_surgery_reason->value(); 
+            if ( $surgery_reason =~ m/Other/ ) { 
+                $surgery_reason = "Other - See Surgery Comments"; 
+            } 
+        }
+    
+        # other surgery reason
+        my $other_reason;
+        if ( defined $cell_other_reason ) {
+            $other_reason = $cell_other_reason->value(); 
+        }
+        
+        #   Diagnosis Date
+        my $diag_date;
+        if ( defined $cell_diag_date ) {
+            $diag_date = $cell_diag_date->value(); 
+        }
+
+        #   Diagnosis type
+        my $diag_type;
+        if ( defined $cell_diag_type ) {
+            $diag_type = $cell_diag_type->value(); 
+        }
+
+        #   Surgery Date
+        my $surg_date;
+        if ( defined $cell_surg_date ) {
+            $surg_date = $cell_surg_date->value(); 
+        }
+
+        #   resection extent 
+        my $res_extent;
+        if ( defined $cell_res_extent ) {
+            $res_extent = $cell_res_extent->value(); 
+            # Map the field entry
+            if ( $res_extent =~ m/other/ ) { 
+                $res_extent = "Other - See Surgery Comments"; 
+            } 
+        }
+
+        #   other resection extent 
+        my $other_extent;
+        if ( defined $cell_other_extent ) {
+            $other_extent = $cell_other_extent->value(); 
+        }
+
+        #   Institution Name 
+        my $inst_name; 
+        if (defined $cell_inst_name) {
+            $inst_name = $cell_inst_name->value();  
+        }
+
+        #   Histological type 
+        my $hist_type; 
+        if (defined $cell_hist_type) {
+            $hist_type = $cell_hist_type->value(); 
+        }
+
+        # original diagnosis 
+        my $orig_diagnosis; 
+        if (defined $cell_orig_diagnosis) {
+            $orig_diagnosis = $cell_orig_diagnosis->value(); 
+        }
+
+        #   other Histological type 
+        my $other_type; 
+        if (defined $cell_other_type) {
+            $other_type = $cell_other_type->value(); 
+        }
+
+        #   side the tumor is on 
+        my $side; 
+        if (defined $cell_side) {
+            $side = $cell_side->value(); 
+        }
+
+        #   is it a multiple lesion 
+        my $multi_lesions; 
+        if (defined $cell_multi_lesions) {
+            $multi_lesions = $cell_multi_lesions->value(); 
+        }
+
+        #   Histological grade 
+        my $hist_grade; 
+        if (defined $cell_hist_grade) {
+            $hist_grade = $cell_hist_grade->value(); 
+        }
+
+        #   the site of the lesion 
+        my $lesion_site; 
+        if (defined $cell_lesion_site) {
+            $lesion_site = $cell_lesion_site->value(); 
+        }
+
+        #  other site of lesion
+        my $other_site; 
+        if (defined $cell_other_site) {
+            $other_site = $cell_other_site->value(); 
+        }
+
+        #   sf num 
+        my $sf_num; 
+        if (defined $cell_sf_num) {
+            $sf_num = $cell_sf_num->value(); 
+        }
+
+        #   sp num Case is inconsistent in spread sheet so we will change all to upper
+        my $sp_num; 
+        if (defined $cell_sp_num) {
+            $sp_num = uc($cell_sp_num->value()); 
+        }
+
+        # Now we are going to generate the comments based on certain 
+        # fields in OnCore. Not the curly brackets are used to 
+        # determine if the information is from a script or from
+        # a user. If they were left out it would append the data
+        # instead of replacing it.
+
+        # Now lets form the surgery comment.
+        my $surgery_comments = "";
+        if( $other_extent ) {
+            $surgery_comments .= "{Other Resection Extent: $other_extent}";
+        } 
+        if( $other_reason ) {
+            $surgery_comments .= "{Other Surgical Reason: $other_reason}";
+        } 
+        
+        # Now lets create the diagnosis comments
+        my $diagnosis_comments = "";
+        if( $other_type ) {
+            $diagnosis_comments .= "{Other Histologic Type: $other_type}";
+        } 
+        if( $other_site ) {
+            $diagnosis_comments .= "{Other Site: $other_site}";
+        } 
+        if( $diag_type ) {
+            $diagnosis_comments .= "{Diagnosis Type: $diag_type}";
+        } 
+        if ( $multi_lesions =~ m/multiple/ ) { 
+            $diagnosis_comments .= "{Multiple Lesions}";
+        } 
+        if ( $side =~ m/multiple/ ) { 
+            $diagnosis_comments .= "{Lesion Side: multiple?}"; 
+            $side = "";
+        } 
+        
+
+        # Validate Protocol Number 
+        my $study_tag = ""; 
+        if ( $protocol_num ) {
+            
+            if ( $protocol_num == "4101" ) {
+                #$study_tag = "$OTRT ask adam"; 
+            } elsif ( $protocol_num == "05103" ) {
+                $study_tag = "P01_RESPONSE_HSP"; 
+            } elsif ( $protocol_num == "06103" ) {
+                $study_tag = "P01_RESPONSE_ENZA"; 
+            } elsif ( $protocol_num == "07105" ) {
+                $study_tag = "P01_RESPONSE_ATT"; 
+            } elsif ( $protocol_num == "07107" ) {
+                $study_tag = "P01_RESPONSE_DDT"; 
+            } elsif ( $protocol_num == "081010" ) {
+                $study_tag = "HSP2 HSP_PHASE_2"; 
+            } elsif ( $protocol_num == "08103" ) {
+                $study_tag = "P01_RESPONSE_REC"; 
+            } elsif ( $protocol_num == "08109" ) {
+                $study_tag = "RAD001"; 
+            } elsif ( $protocol_num == "09103" ) {
+                $study_tag = "P01_RESPONSE_REC"; 
+            } elsif ( $protocol_num == "10101" ) {
+                $study_tag = "P01_RESPONSE_REC"; 
+            } elsif ( $protocol_num == "10105"  ) {
+                $study_tag = "P01_RESPONSE_REC"; 
+            } elsif ( $protocol_num == "99102"  ) {
+                #$study_tag = "TMZ LG Newly diagnosed"; 
+            }
+        }
+
+        if ( $study_tag eq "" ) {
+            print "===========================================.\n\n";
+            print "ERROR: no study tag or not valid study tag!\n\n";
+            print_row($study_tag, $mrn, $birth_date, $expired_date, $surgery_reason, $other_reason, $diag_date, $diag_type
+                    , $surg_date, $res_extent, $other_extent, $inst_name, $hist_type, $orig_diagnosis
+                    , $other_type, $side, $multi_lesions, $hist_grade, $lesion_site, $other_site, $sp_num
+                    , $sf_num, $surgery_comments, $diagnosis_comments ) ;
+            print "VALIDATION FAILURE \n";
+            print "===========================================.\n\n";
+            next;
+        } 
+
+        # Validate MRN
+        if ( !$mrn ) {
+            print "===========================================.\n\n";
+            print "ERROR: no mrn!\n\n";
+            print_row($study_tag, $mrn, $birth_date, $expired_date, $surgery_reason, $other_reason, $diag_date, $diag_type
+                    , $surg_date, $res_extent, $other_extent, $inst_name, $hist_type, $orig_diagnosis
+                    , $other_type, $side, $multi_lesions, $hist_grade, $lesion_site, $other_site, $sp_num
+                    , $sf_num, $surgery_comments, $diagnosis_comments ) ;
+            print "VALIDATION FAILURE \n";
+            print "===========================================.\n\n";
+            next;
+        } 
+
+        #   validate birth date. Birthdates before 1900 cannot be stored in excel and so we get a -1 
+        if($birth_date && $birth_date ne "-1"  && $birth_date ne "") {
+            if(!($birth_date =~ m/\d{4}-\d{2}-\d{2}/)){
+                print "===========================================.\n\n";
+                print "ERROR:Invalid birth date.\n\n";
+                print_row($study_tag, $mrn, $birth_date, $expired_date, $surgery_reason, $other_reason, $diag_date, $diag_type
+                        , $surg_date, $res_extent, $other_extent, $inst_name, $hist_type, $orig_diagnosis
+                        , $other_type, $side, $multi_lesions, $hist_grade, $lesion_site, $other_site, $sp_num
+                        , $sf_num, $surgery_comments, $diagnosis_comments ) ;
+                print "VALIDATION FAILURE \n";
+                print "===========================================.\n\n";
+                next;
+            }
+        } else {
+            # This is either unset or before 1900
+            $birth_date = "";
+        } 
+
+        #   validate expired date 
+        if($expired_date && $expired_date ne "-1" && $expired_date ne "" ) {
+            if( !($expired_date =~ m/\d{4}-\d{2}-\d{2}/)){
+                print "===========================================.\n\n";
+                print "ERROR:Invalid expired date.\n\n";
+                print_row($study_tag, $mrn, $birth_date, $expired_date, $surgery_reason, $other_reason, $diag_date, $diag_type
+                        , $surg_date, $res_extent, $other_extent, $inst_name, $hist_type, $orig_diagnosis
+                        , $other_type, $side, $multi_lesions, $hist_grade, $lesion_site, $other_site, $sp_num
+                        , $sf_num, $surgery_comments, $diagnosis_comments ) ;
+                print "VALIDATION FAILURE \n";
+                print "===========================================.\n\n";
+                next;
+            }
+        } else {
+            $expired_date = "";
+        } 
+
+        #   Validate that one date is present
+        if(!($diag_date) && !($surg_date) ) {
+            print "===========================================.\n\n";
+            print "ERROR:Either a Diagnosis Date or a Surgery Date must be defined.\n\n";
+            print_row($study_tag, $mrn, $birth_date, $expired_date, $surgery_reason, $other_reason, $diag_date, $diag_type
+                    , $surg_date, $res_extent, $other_extent, $inst_name, $hist_type, $orig_diagnosis
+                    , $other_type, $side, $multi_lesions, $hist_grade, $lesion_site, $other_site, $sp_num
+                    , $sf_num, $surgery_comments, $diagnosis_comments ) ;
+            print "VALIDATION FAILURE \n";
+            print "===========================================.\n\n";
+            next;
+        }
+
+        #   Validate that dates are not different 
+        if($diag_date && $surg_date && $diag_date ne $surg_date){
+            print "===========================================.\n\n";
+            print "ERROR: Diagnosis date and a surgery date are inconsistent.\n\n";
+            print_row($study_tag, $mrn, $birth_date, $expired_date, $surgery_reason, $other_reason, $diag_date, $diag_type
+                    , $surg_date, $res_extent, $other_extent, $inst_name, $hist_type, $orig_diagnosis
+                    , $other_type, $side, $multi_lesions, $hist_grade, $lesion_site, $other_site, $sp_num
+                    , $sf_num, $surgery_comments, $diagnosis_comments ) ;
+            print "VALIDATION FAILURE \n";
+            print "===========================================.\n\n";
+            next;
+        }
+       
+        # Choose a date. If both are defined we already checked that they agree.
+        if( $diag_date ) {
+            $date = $diag_date;
+        } else {
+            $date = $surg_date;
+        }
+
+        #   Validate date format 
+        if(!($date =~ m/\d{4}-\d{2}-\d{2}/)){
+            print "===========================================.\n\n";
+            print "ERROR:Invalid Date Format.\n\n";
+            print_row($study_tag, $mrn, $birth_date, $expired_date, $surgery_reason, $other_reason, $diag_date, $diag_type
+                    , $surg_date, $res_extent, $other_extent, $inst_name, $hist_type, $orig_diagnosis
+                    , $other_type, $side, $multi_lesions, $hist_grade, $lesion_site, $other_site, $sp_num
+                    , $sf_num, $surgery_comments, $diagnosis_comments ) ;
+            print "VALIDATION FAILURE \n";
+            print "===========================================.\n\n";
+            next;
+        }
+
+        #   Validate that we have both grade and type
+        if(!($hist_type) ) {
+            print "===========================================.\n\n";
+            print "ERROR:Histology type must be defined.\n\n";
+            print_row($study_tag, $mrn, $birth_date, $expired_date, $surgery_reason, $other_reason, $diag_date, $diag_type
+                    , $surg_date, $res_extent, $other_extent, $inst_name, $hist_type, $orig_diagnosis
+                    , $other_type, $side, $multi_lesions, $hist_grade, $lesion_site, $other_site, $sp_num
+                    , $sf_num, $surgery_comments, $diagnosis_comments ) ;
+            print "VALIDATION FAILURE \n";
+            print "===========================================.\n\n";
+            next;
+        } 
+
+        # Map the field entry
+        if ( $hist_type =~ m/Other/ ) { 
+            $hist_type = "Other - See Diagnosis Comments"; 
+        } 
+
+        if($hist_grade =~ m/undifferentiated \(Grade IV\)/) { 
+            $hist_grade = 'Grade IV';
+        } elsif($hist_grade =~ m/poorly-differentiated \(Grade III\)/) { 
+            $hist_grade = 'Grade III';
+        } elsif($hist_grade =~ m/moderately-differentiated \(Grade II\)/) { 
+            $hist_grade = 'Grade II';
+        } elsif($hist_grade =~ m/well-differentiated \(Grade I\)/) { 
+            $hist_grade = 'Grade I';
+        } elsif($hist_grade =~ m/unknown/ || $hist_grade =~ m/not specified/) { 
+            $hist_grade = "";
+        } elsif($hist_grade) {
+            print "===========================================.\n\n";
+            print "ERROR:Could not identify histology grade.\n\n";
+            print_row($study_tag, $mrn, $birth_date, $expired_date, $surgery_reason, $other_reason, $diag_date, $diag_type
+                    , $surg_date, $res_extent, $other_extent, $inst_name, $hist_type, $orig_diagnosis
+                    , $other_type, $side, $multi_lesions, $hist_grade, $lesion_site, $other_site, $sp_num
+                    , $sf_num, $surgery_comments, $diagnosis_comments ) ;
+            print "VALIDATION FAILURE \n";
+            print "===========================================.\n\n";
+            next;
+        }
+
+        my $insert_diagnosis_script    = "insert_bt_diagnosis_event";
+        if ( $script =~ m/\.dev$/ ) { 
+            $insert_diagnosis_script .= ".dev";
+        }    
+
+        my $cmd;
+        #
+        # Lets insert the diagnosis information
+        #
+        $cmd = "$insert_diagnosis_script --mrn $mrn --date $date --hist \"$hist_type\" ";
+        if( $study_tag && $study_tag ne "" ) {
+            $cmd .= " --study \"$study_tag\" ";
+        }
+        if( $sp_num && $sp_num ne "" ) {
+            $cmd .= " --spn \"$sp_num\" ";
+        }
+        if( $sf_num && $sf_num ne "" ) {
+            $cmd .= " --sfn $sf_num ";
+        }
+        if( $surgery_reason && $surgery_reason ne "" ) {
+            $cmd .= " --surgery_reason \"$surgery_reason\" ";
+        }
+        if( $res_extent && $res_extent ne "" ) {
+            $cmd .= " --resection_extent \"$res_extent\" ";
+        }
+        if( $side && $side ne "" ) {
+            $cmd .= " --lesion_side \"$side\" ";
+        }
+        if( $lesion_site && $lesion_site ne "" ) {
+            $cmd .= " --lesion_site \"$lesion_site\" ";
+        }
+        if( $inst_name && $inst_name ne "" ) {
+            $cmd .= " --inst \"$inst_name\" ";
+        }
+        if( $surgery_comments && $surgery_comments ne "" ) {
+            $cmd .= " --surgery_comments \"$surgery_comments\" ";
+        }
+        if( $diagnosis_comments && $diagnosis_comments ne "" ) {
+            $cmd .= " --diagnosis_comments \"$diagnosis_comments\" ";
+        }
+        if( $hist_grade && $hist_grade ne "" ) {
+            $cmd .= " --grade \"$hist_grade\" ";
+        }
+        
+        if ( system($cmd) ) {
+            print "===========================================.\n\n";
+            print "ERROR: failed running $cmd\n";
+            print_row($study_tag, $mrn, $birth_date, $expired_date, $surgery_reason, $other_reason, $diag_date, $diag_type
+                    , $surg_date, $res_extent, $other_extent, $inst_name, $hist_type, $orig_diagnosis
+                    , $other_type, $side, $multi_lesions, $hist_grade, $lesion_site, $other_site, $sp_num
+                    , $sf_num, $surgery_comments, $diagnosis_comments ) ;
+            print "EXECUTE ERROR FOR :$cmd \n";
+            print "===========================================.\n\n";
+        } else { 
+            print "===========================================.\n\n";
+            $subject_info_updated = update_subject_info( $dbh, $mrn, $birth_date, $expired_date );
+            if( $subject_info_updated ) {
+                print "SUBJECT INFO UPDATED.\n"
+            } else {
+                print "COULD NOT UPDATED SUBJECT INFO.\n"
+            }
+            print "SUCCESS \n";
+            print_row($study_tag, $mrn, $birth_date, $expired_date, $surgery_reason, $other_reason, $diag_date, $diag_type
+                    , $surg_date, $res_extent, $other_extent, $inst_name, $hist_type, $orig_diagnosis
+                    , $other_type, $side, $multi_lesions, $hist_grade, $lesion_site, $other_site, $sp_num
+                    , $sf_num, $surgery_comments, $diagnosis_comments ) ;
+            print "EXECUTE:$cmd \n";
+            print "===========================================.\n\n";
+        }
+
+    }
+
+}
+
+sub print_row( $$$$$$$$$$$$$$$$$$$$$$$$ )
+{
+    my ($study_tag, $mrn, $birth_date, $expired_date, $surgery_reason, $other_reason, $diag_date, $diag_type
+      , $surg_date, $res_extent, $other_extent, $inst_name, $hist_type, $orig_diagnosis
+      , $other_type, $side, $multi_lesions, $hist_grade, $lesion_site, $other_site, $sp_num
+      , $sf_num, $surgery_comments, $diagnosis_comments ) = @_;
+    print "study_tag:          <$study_tag>         \n";
+    print "mrn:                <$mrn>               \n";
+    print "birth date:         <$birth_date>        \n";
+    print "expire date:        <$expired_date>      \n";
+    print "surgery reason:     <$surgery_reason>    \n";
+    print "other reason:       <$other_reason>      \n";
+    print "diagnosis date:     <$diag_date>         \n";
+    print "diagnosis type:     <$diag_type>         \n";
+    print "surgery date:       <$surg_date>         \n";
+    print "resection extent:   <$res_extent>        \n";
+    print "other extent:       <$other_extent>      \n";
+    print "site:               <$inst_name>         \n";
+    print "histology type:     <$hist_type>         \n";
+    print "original diagnosis: <$orig_diagnosis>    \n";
+    print "other type:         <$other_type>        \n";
+    print "side:               <$side>              \n";
+    print "multi_lesions:      <$multi_lesions>     \n";
+    print "lesion site:        <$lesion_site>       \n";
+    print "other site:         <$other_site>        \n";
+    print "histology grade:    <$hist_grade>        \n";
+    print "sp num:             <$sp_num>            \n";
+    print "sf num:             <$sf_num>            \n";
+    print "surgery comments:   <$surgery_comments>  \n";
+    print "diagnosis comments: <$diagnosis_comments>\n";
+}
+
+sub update_subject_info( $$$$ )
+{
+    my ($dbh, $mrn, $birth_date, $expired_date ) = @_;
+
+    if ( defined $mrn && $mrn ne "") {
+        $mrn = "'$mrn'";
+    } else {
+        $mrn = "null";
+    }
+
+    if ( defined $birth_date && $birth_date ne "") {
+        $birth_date = "'$birth_date'";
+    } else {
+        $birth_date = "null";
+    }
+
+    if ( defined $expired_date && $expired_date ne "") {
+        $expired_date = "'$expired_date'";
+    } else {
+        $expired_date = "null";
+    }
+
+    my $sp = "update_subject_info";
+
+    my $sql = "select $sp($mrn, $birth_date, $expired_date, null, null, null )";
+    print "$sql\n";
+    my $sth = $dbh->prepare("$sql");
+    $sth->execute() or die "ERROR: Could not execute stored procedure: $sql\n";
+
+    my $success = 0;
+    my $rows = $sth->rows;
+    if ( $rows > 0 ) {
+        if (my @arr = $sth->fetchrow_array()) {
+             if ( defined $arr[0] ) {
+                 my $return_val =  $arr[0];
+                 if ( $return_val != -1 ) {
+                    print "updated subject info in DB: $return_val \n";
+                    $success = 1;
+                 }
+             }
+        }
+    } 
+    return $success;
+}

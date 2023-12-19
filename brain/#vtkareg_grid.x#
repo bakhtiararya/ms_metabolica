@@ -1,0 +1,12 @@
+#!/bin/csh -f
+
+set target = $1:r
+set source = $2:r
+
+cat << EOF | qsub -pe   brain_pe 1                      \
+                  -l    arch=glinux                     \
+                  -N    vtkareg                         \
+                  -o    .log              \
+                  -e    ${output_root}.stderr           \
+                  -v    PATH,LD_LIBRARY_PATH=$LD_PATH   \
+                  -cwd

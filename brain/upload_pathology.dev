@@ -1,0 +1,443 @@
+#!/usr/bin/perl -w
+
+#   $URL: https://intrarad.ucsf.edu/svn/rad_software/surbeck/brain/DB/nelson_ncvi/trunk/data_upload_qr_scripts/upload_pathology $
+#   $Rev: 34461 $
+#   $Author: bolson@RADIOLOGY.UCSF.EDU $
+#   $Date: 2015-04-03 09:47:14 -0700 (Fri, 03 Apr 2015) $
+#
+#   Specialized data upload script to upload pathology data from spreadsheet to DB.
+#   Note: it uses a local version of some perl modules it depends on.
+#
+
+use strict;
+use Getopt::Long;
+Getopt::Long::config("bundling");
+use Pod::Usage;
+use File::Spec;
+use Cwd;
+use Cwd 'abs_path';
+use Spreadsheet::ParseExcel;
+use FindBin;
+use lib "$FindBin::Bin/libs"; 
+require SET_BRAIN_MODULES;
+
+
+my $script    = $0;
+
+our $xl_row; 
+
+
+##########################
+# read in arguments
+##########################
+my ($debug, $spreadsheet_name ); 
+
+GetOptions(
+    "xl=s"       => \$spreadsheet_name,
+    "d"          => \$debug
+) or pod2usage(-verbose=>2, -exitval=>2);
+
+if( defined($debug) ) {
+    BRAIN_DB_UTILS::dbutils_turn_debug_on();
+}
+
+if (!defined $spreadsheet_name ) {
+    pod2usage(-verbose=>2, -exitval=>2);
+}
+
+
+my $parser   = Spreadsheet::ParseExcel->new();
+
+my $fname = $spreadsheet_name; 
+print "$fname\n";
+my $workbook = $parser->parse($fname);
+
+if ( !defined $workbook ) {
+    die $parser->error(), ". Parse Error occured!\n";
+}
+
+
+my ($sf_num, $vial_color);
+for my $worksheet ( $workbook->worksheets() ) {
+
+    my $worksheet_name = $worksheet->get_name(); 
+
+    print "\n\n########################\n";
+    print "WORKSHEET_NAME: <$worksheet_name> \n";
+    print "########################\n\n\n";
+
+    #   for custom sheet:
+    if ($worksheet_name ne "Data") {
+        next;
+    } 
+
+        
+    my ( $row_min, $row_max ) = $worksheet->row_range();
+    my ( $col_min, $col_max ) = $worksheet->col_range();
+
+    for $xl_row ( $row_min + 1 .. $row_max ) {
+
+        print "\n\n"; 
+        print "==========================================\n"; 
+        print "Row = $xl_row \n";
+        print "\n"; 
+
+        my ($vial_num, $pathologist);
+        my ($tumor_cell_eval, $necrosis, $hyperplasia, $ca_9);
+        my ($smi_31, $f8_delicate, $f8_simple, $f8_complex, $mib_1_ki67, $treatment_eff, $fields_counted);
+        my ($cd_45, $cd_68, $avg_cells ); 
+        my ($mv_delicate, $vegf, $caspase3); 
+        my ($clinical_idh1, $clinical_onep19q, $clinical_p53, $clinical_p53_percent, $clinical_egfr, $clinical_comment); 
+        my ($hist_type, $hist_grade); 
+
+        #   custom format:
+        #my $cell_b_num                = $worksheet->get_cell( $xl_row, 0 );
+        #my $cell_t_num                = $worksheet->get_cell( $xl_row, 1 );
+        my $cell_sf_num               = $worksheet->get_cell( $xl_row, 2 );
+        my $cell_hist_type            = $worksheet->get_cell( $xl_row, 3 );
+        my $cell_hist_grade           = $worksheet->get_cell( $xl_row, 4 );
+        my $cell_vial_num             = $worksheet->get_cell( $xl_row, 5 );
+        #my $cell_vial_color           = $worksheet->get_cell( $xl_row, 6 );
+        my $cell_treatment_eff        = $worksheet->get_cell( $xl_row, 7 );
+        my $cell_clinical_idh1        = $worksheet->get_cell( $xl_row, 8 );
+        my $cell_clinical_onep19q     = $worksheet->get_cell( $xl_row, 9 );
+        my $cell_clinical_p53         = $worksheet->get_cell( $xl_row, 10 );
+        my $cell_clinical_p53_percent = $worksheet->get_cell( $xl_row, 11 );
+        my $cell_clinical_egfr        = $worksheet->get_cell( $xl_row, 12 );
+        my $cell_avg_cells            = $worksheet->get_cell( $xl_row, 13 );
+        my $cell_tumor_cell_eval      = $worksheet->get_cell( $xl_row, 14 );
+        my $cell_mib_1_ki67           = $worksheet->get_cell( $xl_row, 15 );
+        my $cell_smi_31               = $worksheet->get_cell( $xl_row, 16 );
+        my $cell_caspase3             = $worksheet->get_cell( $xl_row, 17 );
+        my $cell_ca_9                 = $worksheet->get_cell( $xl_row, 18 );
+        my $cell_necrosis             = $worksheet->get_cell( $xl_row, 19 );
+        my $cell_hyperplasia          = $worksheet->get_cell( $xl_row, 20 );
+        my $cell_mv_delicate          = $worksheet->get_cell( $xl_row, 21 );
+        my $cell_delicate             = $worksheet->get_cell( $xl_row, 22 );
+        my $cell_simple               = $worksheet->get_cell( $xl_row, 23 );
+        my $cell_complex              = $worksheet->get_cell( $xl_row, 24 );
+        my $cell_vegf                 = $worksheet->get_cell( $xl_row, 25 );
+        my $cell_cd_45                = $worksheet->get_cell( $xl_row, 26 );
+        my $cell_cd_68                = $worksheet->get_cell( $xl_row, 27 );
+        my $cell_clinical_comment     = $worksheet->get_cell( $xl_row, 28 );
+
+        
+        #   sf number
+        $sf_num = ""; 
+        if (defined $cell_sf_num) {
+            $sf_num  = $cell_sf_num->value(); 
+        } else { 
+            print "ERROR: SF number not defined.\n"; 
+            next; 
+        }
+
+        $hist_type = "";
+        if (defined $cell_hist_type) {
+            $hist_type          = $cell_hist_type->value(); 
+        } 
+
+        $hist_grade = "";
+        if (defined $cell_hist_grade) {
+            $hist_grade          = $cell_hist_grade->value(); 
+        } 
+
+        #   vial number
+        $vial_num = ""; 
+        if (defined $cell_vial_num) {
+            $vial_num  = $cell_vial_num->value(); 
+            $vial_num  = "'$vial_num'"; 
+        } else { 
+            print "ERROR: Vial number not defined.\n"; 
+            next; 
+        };
+
+
+        if (defined $cell_tumor_cell_eval) {
+            $tumor_cell_eval = $cell_tumor_cell_eval->value(); 
+            if( $tumor_cell_eval eq "NA" ) {
+                $tumor_cell_eval = "Indeterminable"; 
+            }
+        } else { 
+            print "ERROR: Tumor Cell Evaluation not defined.\n"; 
+            next; 
+        }
+
+        if (defined $cell_necrosis ) {
+            $necrosis       = $cell_necrosis->value(); 
+            if( $necrosis eq "NA" ) {
+                $necrosis = "Indeterminable"; 
+            }
+        } else { 
+            print "ERROR: Necrosis not defined.\n"; 
+            next; 
+        }
+
+        if (defined $cell_hyperplasia) {
+            $hyperplasia    = $cell_hyperplasia->value(); 
+            if( $hyperplasia eq "NA" ) {
+                $hyperplasia = "Indeterminable"; 
+            }
+        } else { 
+            print "ERROR: MV Hyperplasia not defined.\n"; 
+            next; 
+        }
+
+        if (defined $cell_mv_delicate) {
+            $mv_delicate    = $cell_mv_delicate->value(); 
+            if( $mv_delicate eq "NA" ) {
+                $mv_delicate = "Indeterminable"; 
+            }
+        } 
+
+        if (defined $cell_delicate) {
+            $f8_delicate    = $cell_delicate->value(); 
+            if( $f8_delicate eq "NA" ) {
+                $f8_delicate = "Indeterminable"; 
+            }
+        }
+
+        if (defined $cell_simple) {
+            $f8_simple      = $cell_simple->value(); 
+            if( $f8_simple eq "NA" ) {
+                $f8_simple = "Indeterminable"; 
+            }
+        } 
+
+        if (defined $cell_complex) {
+            $f8_complex     = $cell_complex->value(); 
+            if( $f8_complex eq "NA" ) {
+                $f8_complex = "Indeterminable"; 
+            }
+        } 
+
+        if (defined $cell_ca_9) {
+            $ca_9           = $cell_ca_9->value(); 
+            if( $ca_9 eq "NA" ) {
+                $ca_9 = "Indeterminable"; 
+            }
+        }
+
+        if (defined $cell_smi_31) {
+            $smi_31         = $cell_smi_31->value(); 
+            if( $smi_31 eq "NA" ) {
+                $smi_31 = "Indeterminable"; 
+            }
+        }
+
+        if (defined $cell_cd_45) {
+            $cd_45          = $cell_cd_45->value(); 
+            if( $cd_45 eq "NA" ) {
+                $cd_45 = "Indeterminable"; 
+            }
+        } 
+
+        if (defined $cell_clinical_idh1) {
+            $clinical_idh1          = $cell_clinical_idh1->value(); 
+            if( ( $cell_clinical_idh1->type() eq "Numeric" && $clinical_idh1 == 0 ) || $cell_clinical_idh1 eq '0' ) {
+                $clinical_idh1 = "Negative"; 
+            } elsif( ( $cell_clinical_idh1->type() eq "Numeric" && $clinical_idh1 == 1 )  || $cell_clinical_idh1 eq '1' ) {
+                $clinical_idh1 = "Positive"; 
+            } 
+        }
+
+        if (defined $cell_clinical_onep19q) {
+            $clinical_onep19q          = $cell_clinical_onep19q->value(); 
+        } 
+
+        if (defined $cell_cd_68) {
+            $cd_68          = $cell_cd_68->value(); 
+            if( $cd_68 eq "NA" ) {
+                $cd_68 = "Indeterminable"; 
+            }
+        }
+
+        if (defined $cell_clinical_p53) {
+            $clinical_p53          = $cell_clinical_p53->value(); 
+        } 
+
+        if (defined $cell_clinical_p53_percent) {
+            $clinical_p53_percent  = $cell_clinical_p53_percent->value(); 
+        } 
+
+        if (defined $cell_clinical_egfr) {
+            $clinical_egfr          = $cell_clinical_egfr->value(); 
+        } 
+
+        if (defined $cell_clinical_comment) {
+            $clinical_comment          = $cell_clinical_comment->value(); 
+        } 
+
+        if (defined $cell_vegf) {
+            $vegf          = $cell_vegf->value(); 
+            if( $vegf eq "NA" ) {
+                $vegf = "Indeterminable"; 
+            }
+        } 
+
+        if (defined $cell_caspase3) {
+            $caspase3          = $cell_caspase3->value(); 
+        }
+
+        if (defined $cell_mib_1_ki67) {
+            $mib_1_ki67          = $cell_mib_1_ki67->value(); 
+            if( $mib_1_ki67 eq "NA" ) {
+                $mib_1_ki67 = ""; 
+            }
+        } else { 
+            print "ERROR: MIB-1-ki67 not defined.\n"; 
+            next; 
+        }
+
+        if (defined $cell_avg_cells && $cell_avg_cells->value() ne "NA" ) {
+            $avg_cells      = $cell_avg_cells->value(); 
+        } 
+
+        if (defined $cell_treatment_eff && $cell_treatment_eff->value() ne "" && $cell_treatment_eff->value() ne "NA") {
+            if( ( $cell_treatment_eff->type() eq "Numeric" && $cell_treatment_eff->value() == 0 ) || lc($cell_treatment_eff->value()) eq 'f' ) {
+                $treatment_eff = "NO"; 
+            } elsif( ( $cell_treatment_eff->type() eq "Numeric" && $cell_treatment_eff->value() == 1 ) || lc($cell_treatment_eff->value()) eq 't' ) {
+                $treatment_eff = "YES"; 
+            } else {
+                print "ERROR: treatment effect value '" . $cell_treatment_eff->value() . "' not recognized. Must be 0,1,t or f.\n";
+                next;
+            }
+        } 
+
+        if ($debug) {
+            print "SFNUM: $sf_num \n";
+            print "VNUM:  $vial_num\n";
+        }
+
+        if ( $sf_num ne "" && $vial_num ne "" ) {
+                
+            my $insert_path_script = "insert_pathology_result";
+            if ( $script =~ m/\.dev$/ ) { 
+                $insert_path_script .= ".dev";
+            }    
+            my $insert_path_cmd = "$insert_path_script";
+            $insert_path_cmd .= " --sf_num $sf_num"; 
+            $insert_path_cmd .= " --vial_num $vial_num"; 
+            $insert_path_cmd .= " --pathologist ''";   
+            if ( defined($treatment_eff) and length($treatment_eff)>0 ) {
+                $insert_path_cmd .= " --treatment_effect $treatment_eff"; 
+            }
+            if ( defined($avg_cells) and length($avg_cells)>0 ) {
+                $insert_path_cmd .= " --avg_cells $avg_cells"; 
+            }
+            if ( length($tumor_cell_eval)>0 ) {
+                $insert_path_cmd .= " --tumor_cell_eval $tumor_cell_eval";  
+            }
+            if ( length($mib_1_ki67)>0 ) {
+                $insert_path_cmd .= " --mib_1_ki67 $mib_1_ki67"; 
+            }
+            if ( defined($smi_31) && length($smi_31)>0 ) {
+                $insert_path_cmd .= " --smi_31 $smi_31"; 
+            }
+            if ( defined($caspase3) && length($caspase3)>0 ) {
+                $insert_path_cmd .= " --caspase3 $caspase3"; 
+            }
+            if ( defined($ca_9) && length($ca_9)>0 ) {
+                $insert_path_cmd .= " --ca_9 $ca_9"; 
+            }
+            if ( length($necrosis)>0 ) {
+                $insert_path_cmd .= " --necrosis  $necrosis";   
+            }
+            if ( length($hyperplasia)>0 ) {
+                $insert_path_cmd .= " --hyperplasia $hyperplasia"; 
+            }
+            if ( defined($mv_delicate) && length($mv_delicate)>0 ) {
+                $insert_path_cmd .= " --delicate_vasc $mv_delicate"; 
+            }
+            if ( defined($f8_delicate) && length($f8_delicate)>0 ) {
+                $insert_path_cmd .= " --f8_delicate $f8_delicate"; 
+            }
+            if ( defined($f8_simple) && length($f8_simple)>0 ) {
+                $insert_path_cmd .= " --f8_simple  $f8_simple"; 
+            }
+            if ( defined($f8_complex) && length($f8_complex)>0 ) {
+                $insert_path_cmd .= " --f8_complex $f8_complex"; 
+            }
+            if ( defined( $vegf) and length($vegf)>0 ) {
+                $insert_path_cmd .= " --vegf $vegf"; 
+            }
+            if ( defined( $cd_45) and length($cd_45)>0 ) {
+                $insert_path_cmd .= " --cd_45 $cd_45"; 
+            }
+            if ( defined( $cd_68 ) and length($cd_68)>0 ) {
+                $insert_path_cmd .= " --cd_68 $cd_68"; 
+            }
+            
+            print "$insert_path_cmd\n";
+    
+            if ( !$debug ) {       
+                if ( system($insert_path_cmd) ) {
+                    print "##########################\n";
+                    print "ERROR: failed running:\n $insert_path_cmd\n";
+                    print "##########################\n";
+                }
+            }
+        
+            if( BRAIN_DB_UTILS::dbutils_update_clinical_biopsy_pathology
+                    (
+                        $sf_num, 
+                        $clinical_idh1,
+                        $clinical_onep19q,
+                        $clinical_p53,  
+                        $clinical_p53_percent,
+                        $clinical_egfr,
+                        $clinical_comment                          
+                    ) != 0 ) {
+                    print "##########################\n";
+                    print "ERROR: failed running: \n";
+                    print "dbutils_update_clinical_biopsy_pathology (";
+                    print " $sf_num, $clinical_idh1, $clinical_onep19q, $clinical_p53, $clinical_p53_percent, $clinical_egfr, $clinical_comment )\n";
+                    print "##########################\n";
+            } 
+            if( length($hist_type) > 0 && length($hist_grade) > 0 ) {
+                if( BRAIN_DB_UTILS::dbutils_insert_bt_diagnosis_with_sf
+                        (
+                            $sf_num, 
+                            $hist_type,
+                            $hist_grade
+                        ) != 0 ) {
+                        print "##########################\n";
+                        print "ERROR: failed running: \n";
+                        print "dbutils_insert_bt_diagnosis_with_sf (";
+                        print " $sf_num, $hist_type, $hist_grade )\n";
+                        print "##########################\n";
+                } 
+            }
+
+        } else {
+            print "ERROR(invalid args): Can not determine input args for path insertion(b, v#, v_color): $sf_num, $vial_num\n";
+        } 
+    }
+        
+}
+
+################################################################
+#   Subroutines
+################################################################
+
+
+###############################################################################
+#
+#   POD Usage docs
+#
+###############################################################################
+
+=head1 NAME
+
+    upload_pathology
+
+=head1 SYNOPSIS
+
+    upload_pathology --xl spreadsheet_name
+
+        --xl    spreadsheet_name    path to spreadsheet to upload. 
+        -d                          Print debugging messages.
+
+NOTE: If -d is used no data will be uploaded.
+
+=cut
+

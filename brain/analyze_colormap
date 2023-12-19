@@ -1,0 +1,11 @@
+#!/bin/csh -f 
+
+setenv XAPPLRESDIR `get_path_root`/share/matlab/X11/app-defaults
+
+setenv PATH ${PATH}:`get_path_root`/bin/local/brain/analyze_colormap
+
+setenv LD_LIBRARY_PATH `get_path_root`/share/matlab_versions/matlab_2012a//sys/java/jre/glnxa64/jre/lib/amd64/server/:`get_path_root`/share/matlab_versions/matlab_2012a//bin/glnxa64:`get_path_root`/share/matlab_versions/matlab_2012a//runtime/glnxa64
+
+umask 002 
+
+`get_path_root`/bin/local/brain/analyze_colormap/analyze_colormap $* 

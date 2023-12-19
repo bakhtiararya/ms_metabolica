@@ -1,0 +1,9 @@
+#!/bin/csh -f 
+
+setenv XAPPLRESDIR `get_path_root`/share/matlab/X11/app-defaults
+
+setenv PATH ${PATH}:`get_path_root`/bin/local/brain/volume_to_nii
+
+umask 002 
+
+`get_path_root`/bin/local/brain/volume_to_nii/volume_to_nii $* 
