@@ -16,12 +16,6 @@ The inhibition of glutathione, a buffer which maintains redox balance in neural 
 
 Distributed under the License. See `LICENSE` for more information.
 
-<!-- CONTACT -->
-## Contact
-
-Arya Bakhtiar 
-email: bakhtiararya [at] berkeley.edu
-
 ## Software Interface
 
 Below is an image of the software for measuring specific metabolites based on input subject files. 
